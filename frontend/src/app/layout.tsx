@@ -1,7 +1,5 @@
 import type { ReactNode } from "react";
 import "./globals.css";
-import { Footer } from "@/components/footer";
-import { Nav } from "@/components/nav";
 import { Geist, GeistMono } from "swift-rust/font/google";
 
 const geist = Geist({ variable: true, subsets: ["latin"] });
@@ -11,17 +9,9 @@ const fontSansClass = geist.className;
 const fontMonoClass = geistMono.className;
 
 export const metadata = {
-  title: {
-    template: "%s | Swift Rust",
-    default: "Swift Rust — The React framework powered with Rust + Bun",
-  },
+  title: "Bank Statement & Credit Scoring Engine",
   description:
-    "Swift Rust is a Next.js-compatible full-stack React framework powered with Rust + Bun. TSX, streaming SSR, four rendering modes, 10x faster than Next.js, single binary deploy.",
-  openGraph: {
-    title: "Swift Rust",
-    description: "The React framework powered with Rust + Bun.",
-    type: "website",
-  },
+    "Pan-African Automated Bank Statement Parsing, Fraud Detection, Loan-Stacking Risk Analysis, and Financial Underwriting.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -34,10 +24,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         ["--font-mono" as string]: "'Geist Mono', ui-monospace, monospace",
       }}
     >
-      <body className="min-h-screen bg-bg font-sans text-fg antialiased">
-        <Nav />
-        <main className="min-h-[calc(100vh-3.5rem)]">{children}</main>
-        <Footer />
+      <body className="min-h-screen bg-slate-950 font-sans text-slate-100 antialiased selection:bg-blue-500/30 selection:text-blue-200">
+        {children}
       </body>
     </html>
   );

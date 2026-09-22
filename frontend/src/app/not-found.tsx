@@ -15,9 +15,6 @@ export default function GlobalNotFound() {
           <Link href="/" className="btn btn-primary">
             Back to home
           </Link>
-          <Link href="/blog" className="btn btn-outline">
-            Read the blog
-          </Link>
         </div>
       </div>
     </div>
