@@ -6,8 +6,13 @@ interface Summary {
   total_income: number;
   total_expenses: number;
   net_cashflow: number;
-  average_balance: number;
-  transaction_count: number;
+  average_balance?: number;
+  combined_average_balance?: number;
+  transaction_count?: number;
+  total_accounts_count?: number;
+  total_transactions_count?: number;
+  self_transfers_deduped_count?: number;
+  self_transfers_volume_deduped?: number;
 }
 
 interface LenderBreakdown {
@@ -57,40 +62,69 @@ interface Transaction {
   debit: number;
   credit: number;
   balance: number;
+  source_bank?: string;
+}
+
+interface SelfTransfer {
+  amount: number;
+  from_account: string;
+  to_account: string;
+  debit_description: string;
+  credit_description: string;
+  date: string;
+}
+
+interface AccountOverview {
+  account_index: number;
+  bank: string;
+  filename: string;
+  transaction_count: number;
+  total_income: number;
+  total_expenses: number;
+  average_balance: number;
 }
 
 interface StatementResult {
   status: string;
+  is_consolidated?: boolean;
   bank?: string;
   filename?: string;
   summary?: Summary;
+  consolidated_summary?: Summary;
+  accounts_overview?: AccountOverview[];
+  self_transfers_detected?: SelfTransfer[];
   loan_stacking?: LoanStacking;
+  consolidated_loan_stacking?: LoanStacking;
   credit_narrative?: CreditNarrative;
+  consolidated_credit_narrative?: CreditNarrative;
   transactions?: Transaction[];
+  consolidated_transactions?: Transaction[];
   error?: string;
 }
 
 export default function Home() {
-  const [file, setFile] = useState<File | null>(null);
-  const [password, setPassword] = useState("");
+  const [mode, setMode] = useState<"single" | "consolidate">("single");
+  const [singleFile, setSingleFile] = useState<File | null>(null);
+  const [singlePassword, setSinglePassword] = useState("");
+  const [multiFiles, setMultiFiles] = useState<FileList | null>(null);
+  const [multiPasswords, setMultiPasswords] = useState("");
+  
   const [loading, setLoading] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<StatementResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleUpload = async (e: React.FormEvent) => {
+  const handleUploadSingle = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return;
+    if (!singleFile) return;
 
     setLoading(true);
     setErrorMsg(null);
     setResult(null);
 
     const formData = new FormData();
-    formData.append("file", file);
-    if (password) {
-      formData.append("password", password);
-    }
+    formData.append("file", singleFile);
+    if (singlePassword) formData.append("password", singlePassword);
 
     try {
       const res = await fetch("http://127.0.0.1:8000/statements/upload", {
@@ -98,15 +132,49 @@ export default function Home() {
         body: formData,
       });
 
+      if (!res.ok) throw new Error("Failed to upload statement.");
+      const data = await res.json();
+      setJobId(data.job_id);
+      pollStatus(data.job_id);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Network error. Is the backend running?");
+      setLoading(false);
+    }
+  };
+
+  const handleUploadConsolidate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!multiFiles || multiFiles.length < 2) {
+      setErrorMsg("Please select at least 2 bank statements to consolidate.");
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg(null);
+    setResult(null);
+
+    const formData = new FormData();
+    for (let i = 0; i < multiFiles.length; i++) {
+      formData.append("files", multiFiles[i]);
+    }
+    if (multiPasswords) formData.append("passwords", multiPasswords);
+
+    try {
+      const res = await fetch("http://127.0.0.1:8000/statements/consolidate", {
+        method: "POST",
+        body: formData,
+      });
+
       if (!res.ok) {
-        throw new Error("Failed to upload statement.");
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || "Failed to start consolidation job.");
       }
 
       const data = await res.json();
       setJobId(data.job_id);
       pollStatus(data.job_id);
     } catch (err: any) {
-      setErrorMsg(err.message || "Network error. Is the backend running on port 8000?");
+      setErrorMsg(err.message || "Network error during consolidation.");
       setLoading(false);
     }
   };
@@ -124,7 +192,7 @@ export default function Home() {
         } else if (data.status === "failed") {
           clearInterval(interval);
           setResult(data);
-          setErrorMsg(data.error || "Failed to process bank statement.");
+          setErrorMsg(data.error || "Failed to process statement(s).");
           setLoading(false);
         }
       } catch (err) {
@@ -149,57 +217,133 @@ export default function Home() {
     }
   };
 
+  const activeSummary = result?.is_consolidated ? result.consolidated_summary : result?.summary;
+  const activeStacking = result?.is_consolidated ? result.consolidated_loan_stacking : result?.loan_stacking;
+  const activeNarrative = result?.is_consolidated ? result.consolidated_credit_narrative : result?.credit_narrative;
+  const activeTransactions = result?.is_consolidated ? result.consolidated_transactions : result?.transactions;
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-8">
       <div className="max-w-5xl mx-auto space-y-8">
-        <header className="border-b border-slate-800 pb-6 flex items-center justify-between">
+        <header className="border-b border-slate-800 pb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-white">
               Bank Statement & Credit Scoring Engine
             </h1>
             <p className="text-slate-400 text-sm mt-1">
-              Automated Statement Parsing, Loan-Stacking Detection & AI Credit Assessment Memo.
+              Supports GTBank, Access, UBA, OPay, PalmPay, Kuda & Multi-Statement Consolidation.
             </p>
           </div>
-          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto">
             API Online
           </span>
         </header>
 
+        {/* Mode Selector Tabs */}
+        <div className="flex border-b border-slate-800 gap-4">
+          <button
+            onClick={() => setMode("single")}
+            className={`pb-3 text-sm font-semibold border-b-2 transition ${
+              mode === "single"
+                ? "border-blue-500 text-blue-400"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            Single Statement Analysis
+          </button>
+          <button
+            onClick={() => setMode("consolidate")}
+            className={`pb-3 text-sm font-semibold border-b-2 transition flex items-center gap-1.5 ${
+              mode === "consolidate"
+                ? "border-blue-500 text-blue-400"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <span>Multi-Account Consolidation (2–3 Accounts)</span>
+            <span className="px-1.5 py-0.5 text-[10px] rounded bg-blue-500/20 text-blue-300 font-bold">
+              PRO
+            </span>
+          </button>
+        </div>
+
         {/* Upload Form */}
         <section className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-white mb-4">Upload Statement</h2>
-          <form onSubmit={handleUpload} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
-              <div className="sm:col-span-2">
-                <input
-                  type="file"
-                  accept=".pdf,image/*"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
-                  className="file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 text-sm text-slate-400 w-full cursor-pointer bg-slate-800/40 rounded-lg p-1.5 border border-slate-700/60"
-                />
+          {mode === "single" ? (
+            <form onSubmit={handleUploadSingle} className="space-y-4">
+              <h2 className="text-lg font-semibold text-white">Upload Single Bank Statement</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+                <div className="sm:col-span-2">
+                  <input
+                    type="file"
+                    accept=".pdf,image/*"
+                    onChange={(e) => setSingleFile(e.target.files?.[0] || null)}
+                    className="file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 text-sm text-slate-400 w-full cursor-pointer bg-slate-800/40 rounded-lg p-1.5 border border-slate-700/60"
+                  />
+                </div>
+                <div>
+                  <input
+                    type="password"
+                    placeholder="PDF Password (if protected)"
+                    value={singlePassword}
+                    onChange={(e) => setSinglePassword(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-lg bg-slate-800/60 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={!singleFile || loading}
+                  className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-sm transition"
+                >
+                  {loading ? "Analyzing..." : "Analyze Statement"}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleUploadConsolidate} className="space-y-4">
               <div>
-                <input
-                  type="password"
-                  placeholder="PDF Password (if protected)"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg bg-slate-800/60 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                />
+                <h2 className="text-lg font-semibold text-white">
+                  Consolidate Multiple Statements (Merge Accounts)
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Select 2 to 3 statements (e.g. GTBank Salary + OPay / Kuda Daily Spending). Automatically eliminates self-transfers!
+                </p>
               </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={!file || loading}
-                className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-sm transition"
-              >
-                {loading ? "Extracting & Generating Memo..." : "Analyze Statement"}
-              </button>
-            </div>
-          </form>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+                <div className="sm:col-span-2">
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,image/*"
+                    onChange={(e) => setMultiFiles(e.target.files)}
+                    className="file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 text-sm text-slate-400 w-full cursor-pointer bg-slate-800/40 rounded-lg p-1.5 border border-slate-700/60"
+                  />
+                  <span className="text-[11px] text-slate-500 mt-1 block">
+                    Hold Ctrl or Shift to select 2 to 3 files.
+                  </span>
+                </div>
+                <div>
+                  <input
+                    type="text"
+                    placeholder="Passwords (comma-separated)"
+                    value={multiPasswords}
+                    onChange={(e) => setMultiPasswords(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-lg bg-slate-800/60 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={!multiFiles || multiFiles.length < 2 || loading}
+                  className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-sm transition"
+                >
+                  {loading ? "Consolidating & Deduping..." : "Consolidate & Analyze Profile"}
+                </button>
+              </div>
+            </form>
+          )}
 
           {errorMsg && (
             <div className="mt-4 p-4 rounded-lg bg-rose-950/40 border border-rose-800/50 text-rose-300 text-sm font-medium">
@@ -208,76 +352,98 @@ export default function Home() {
           )}
         </section>
 
-        {/* Status / Loading */}
+        {/* Loading Indicator */}
         {loading && (
           <div className="flex items-center justify-center p-12 bg-slate-900/50 rounded-xl border border-slate-800 animate-pulse">
             <p className="text-slate-300 font-medium">
-              Extracting transactions, assessing risk flags & compiling credit memo...
+              Extracting statements, deduping internal self-transfers & building unified credit profile...
             </p>
           </div>
         )}
 
-        {/* Extraction Results */}
+        {/* Results View */}
         {result && result.status === "completed" && (
           <div className="space-y-6">
+            {/* Multi-Account Overview Pills (If Consolidated) */}
+            {result.is_consolidated && result.accounts_overview && (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">
+                    Merged Accounts ({result.accounts_overview.length} Banks)
+                  </h3>
+                  {result.consolidated_summary?.self_transfers_deduped_count ? (
+                    <span className="px-2.5 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                      ✓ {result.consolidated_summary.self_transfers_deduped_count} Internal Self-Transfers Deduped (₦
+                      {result.consolidated_summary.self_transfers_volume_deduped?.toLocaleString()})
+                    </span>
+                  ) : null}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {result.accounts_overview.map((acc, i) => (
+                    <div key={i} className="bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-xs space-y-1">
+                      <div className="flex justify-between font-bold text-white">
+                        <span>{acc.bank}</span>
+                        <span className="text-slate-400 font-normal">{acc.transaction_count} txs</span>
+                      </div>
+                      <div className="text-slate-400 truncate">{acc.filename}</div>
+                      <div className="pt-1 text-emerald-400 font-medium">
+                        Inflow: ₦{acc.total_income.toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Executive Credit Memo Card */}
-            {result.credit_narrative && (
+            {activeNarrative && (
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
                   <div>
                     <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">
-                      Credit Decision & Underwriting Memo
+                      {result.is_consolidated ? "Consolidated Underwriting Memo" : "Single Account Memo"}
                     </span>
                     <h2 className="text-xl font-bold text-white mt-0.5">
                       Executive Narrative Summary
                     </h2>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`px-3 py-1.5 text-xs font-bold rounded-lg border uppercase tracking-wider ${result.credit_narrative.recommendation_badge}`}
-                    >
-                      {result.credit_narrative.recommendation}
-                    </span>
-                  </div>
+                  <span
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg border uppercase tracking-wider self-start sm:self-auto ${activeNarrative.recommendation_badge}`}
+                  >
+                    {activeNarrative.recommendation}
+                  </span>
                 </div>
 
-                {/* Plain-English Synthesis Paragraph */}
                 <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 text-sm leading-relaxed text-slate-200">
-                  <p>{result.credit_narrative.executive_summary}</p>
+                  <p>{activeNarrative.executive_summary}</p>
                 </div>
 
-                {/* Key Underwriting Indicators */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
                   <div className="bg-slate-800/40 p-3.5 rounded-lg border border-slate-700/50">
                     <span className="text-xs text-slate-400">Income Stream Profile</span>
-                    <p className="text-sm font-bold text-white mt-1">
-                      {result.credit_narrative.income_profile}
-                    </p>
+                    <p className="text-sm font-bold text-white mt-1">{activeNarrative.income_profile}</p>
                   </div>
                   <div className="bg-slate-800/40 p-3.5 rounded-lg border border-slate-700/50">
                     <span className="text-xs text-slate-400">Expense Burn Rate</span>
-                    <p className="text-sm font-bold text-slate-200 mt-1">
-                      {result.credit_narrative.burn_rate_percentage}% of inflows
-                    </p>
+                    <p className="text-sm font-bold text-slate-200 mt-1">{activeNarrative.burn_rate_percentage}%</p>
                   </div>
                   <div className="bg-slate-800/40 p-3.5 rounded-lg border border-slate-700/50">
                     <span className="text-xs text-slate-400">Recommended Max Loan Ticket</span>
                     <p className="text-sm font-bold text-emerald-400 mt-1">
-                      ₦{result.credit_narrative.recommended_max_loan_capacity.toLocaleString()}
+                      ₦{activeNarrative.recommended_max_loan_capacity.toLocaleString()}
                     </p>
                   </div>
                   <div className="bg-slate-800/40 p-3.5 rounded-lg border border-slate-700/50">
                     <span className="text-xs text-slate-400">Safe Monthly Installment Cap</span>
                     <p className="text-sm font-bold text-sky-400 mt-1">
-                      ₦{result.credit_narrative.recommended_monthly_installment_cap.toLocaleString()}
+                      ₦{activeNarrative.recommended_monthly_installment_cap.toLocaleString()}
                     </p>
                   </div>
                 </div>
 
-                {/* Decision Rationale */}
                 <div className="p-3.5 rounded-lg bg-blue-950/20 border border-blue-900/40 text-xs text-blue-200 flex items-start gap-2">
                   <span className="font-bold shrink-0">Rationale:</span>
-                  <span>{result.credit_narrative.recommendation_reason}</span>
+                  <span>{activeNarrative.recommendation_reason}</span>
                 </div>
               </div>
             )}
@@ -285,31 +451,44 @@ export default function Home() {
             {/* Financial Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                <p className="text-xs text-slate-400 font-medium uppercase">Detected Bank</p>
-                <p className="text-xl font-bold text-white mt-1">{result.bank || "Unknown"}</p>
+                <p className="text-xs text-slate-400 font-medium uppercase">
+                  {result.is_consolidated ? "Consolidated Bank Profile" : "Detected Bank"}
+                </p>
+                <p className="text-xl font-bold text-white mt-1">
+                  {result.is_consolidated
+                    ? `${result.accounts_overview?.length || 2} Accounts Merged`
+                    : result.bank || "Unknown"}
+                </p>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                <p className="text-xs text-slate-400 font-medium uppercase">Total Inflow / Income</p>
+                <p className="text-xs text-slate-400 font-medium uppercase">Total Real Inflow / Income</p>
                 <p className="text-xl font-bold text-emerald-400 mt-1">
-                  ₦{result.summary?.total_income.toLocaleString()}
+                  ₦{activeSummary?.total_income.toLocaleString()}
                 </p>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                <p className="text-xs text-slate-400 font-medium uppercase">Total Outflow / Expenses</p>
+                <p className="text-xs text-slate-400 font-medium uppercase">Total Real Outflow / Expenses</p>
                 <p className="text-xl font-bold text-rose-400 mt-1">
-                  ₦{result.summary?.total_expenses.toLocaleString()}
+                  ₦{activeSummary?.total_expenses.toLocaleString()}
                 </p>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                <p className="text-xs text-slate-400 font-medium uppercase">Average Balance</p>
+                <p className="text-xs text-slate-400 font-medium uppercase">
+                  {result.is_consolidated ? "Combined Avg Balance" : "Average Balance"}
+                </p>
                 <p className="text-xl font-bold text-sky-400 mt-1">
-                  ₦{result.summary?.average_balance.toLocaleString()}
+                  ₦
+                  {(
+                    activeSummary?.combined_average_balance ||
+                    activeSummary?.average_balance ||
+                    0
+                  ).toLocaleString()}
                 </p>
               </div>
             </div>
 
             {/* Loan-Stacking Detection Engine Card */}
-            {result.loan_stacking && (
+            {activeStacking && (
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
                   <div>
@@ -317,15 +496,15 @@ export default function Home() {
                       <span>Loan-Stacking & Multi-Lender Risk</span>
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Pattern detection matching repayments across Nigerian digital lenders (Carbon, FairMoney, Branch, QuickCheck, etc.)
+                      Cross-account pattern detection matching Nigerian digital lenders (Carbon, FairMoney, Branch, QuickCheck, etc.)
                     </p>
                   </div>
                   <span
                     className={`px-3 py-1 text-xs font-bold rounded-full border self-start sm:self-auto ${getRiskBadge(
-                      result.loan_stacking.risk_level
+                      activeStacking.risk_level
                     )}`}
                   >
-                    {result.loan_stacking.risk_level} RISK
+                    {activeStacking.risk_level} RISK
                   </span>
                 </div>
 
@@ -333,40 +512,39 @@ export default function Home() {
                   <div className="bg-slate-800/40 rounded-lg p-3.5 border border-slate-700/50">
                     <p className="text-xs text-slate-400">Active Lenders Detected</p>
                     <p className="text-2xl font-bold text-white mt-1">
-                      {result.loan_stacking.unique_lenders_count}
+                      {activeStacking.unique_lenders_count}
                     </p>
                   </div>
                   <div className="bg-slate-800/40 rounded-lg p-3.5 border border-slate-700/50">
-                    <p className="text-xs text-slate-400">Total Loan Servicing Outflows</p>
+                    <p className="text-xs text-slate-400">Total Monthly Debt Outflow</p>
                     <p className="text-2xl font-bold text-rose-400 mt-1">
-                      ₦{result.loan_stacking.total_repayments.toLocaleString()}
+                      ₦{activeStacking.total_repayments.toLocaleString()}
                     </p>
                   </div>
                   <div className="bg-slate-800/40 rounded-lg p-3.5 border border-slate-700/50">
-                    <p className="text-xs text-slate-400">Debt-to-Income (DTI) Impact</p>
+                    <p className="text-xs text-slate-400">Consolidated DTI Ratio</p>
                     <p className="text-2xl font-bold text-amber-400 mt-1">
-                      {result.loan_stacking.debt_to_income_ratio}%
+                      {activeStacking.debt_to_income_ratio}%
                     </p>
                   </div>
                 </div>
 
                 <p className="text-sm text-slate-300 bg-slate-950/60 p-3 rounded-lg border border-slate-800">
-                  <span className="font-semibold text-slate-200">Assessment:</span> {result.loan_stacking.risk_description}
+                  <span className="font-semibold text-slate-200">Assessment:</span> {activeStacking.risk_description}
                 </p>
 
-                {/* Detected Lenders Table */}
-                {result.loan_stacking.lenders_breakdown.length > 0 && (
+                {activeStacking.lenders_breakdown.length > 0 && (
                   <div className="space-y-2 pt-2">
                     <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      Breakdown by Lender
+                      Breakdown by Lender Across All Accounts
                     </h4>
                     <div className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-950/40 overflow-hidden text-sm">
-                      {result.loan_stacking.lenders_breakdown.map((lender, i) => (
+                      {activeStacking.lenders_breakdown.map((lender, i) => (
                         <div key={i} className="p-3 flex items-center justify-between">
                           <div>
                             <span className="font-medium text-white">{lender.lender}</span>
                             <span className="text-xs text-slate-400 ml-2">
-                              ({lender.repayment_count} repayment transactions)
+                              ({lender.repayment_count} repayments)
                             </span>
                           </div>
                           <span className="font-semibold text-rose-400">
@@ -383,9 +561,11 @@ export default function Home() {
             {/* Extracted Transactions Table */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
               <div className="p-4 border-b border-slate-800 flex justify-between items-center">
-                <h3 className="font-semibold text-white">Extracted Transactions</h3>
+                <h3 className="font-semibold text-white">
+                  {result.is_consolidated ? "Unified Consolidated Transactions" : "Extracted Transactions"}
+                </h3>
                 <span className="text-xs text-slate-400">
-                  {result.transactions?.length || 0} records parsed
+                  {activeTransactions?.length || 0} records
                 </span>
               </div>
               <div className="overflow-x-auto max-h-96">
@@ -393,6 +573,7 @@ export default function Home() {
                   <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase tracking-wider sticky top-0">
                     <tr>
                       <th className="p-3">Date</th>
+                      {result.is_consolidated && <th className="p-3">Bank Source</th>}
                       <th className="p-3">Description</th>
                       <th className="p-3 text-right">Debit (₦)</th>
                       <th className="p-3 text-right">Credit (₦)</th>
@@ -400,10 +581,15 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
-                    {result.transactions && result.transactions.length > 0 ? (
-                      result.transactions.map((tx, idx) => (
+                    {activeTransactions && activeTransactions.length > 0 ? (
+                      activeTransactions.map((tx, idx) => (
                         <tr key={idx} className="hover:bg-slate-800/30">
                           <td className="p-3 whitespace-nowrap">{tx.date}</td>
+                          {result.is_consolidated && (
+                            <td className="p-3 whitespace-nowrap text-xs text-blue-400 font-medium">
+                              {tx.source_bank || "Account"}
+                            </td>
+                          )}
                           <td className="p-3 max-w-xs truncate">{tx.description}</td>
                           <td className="p-3 text-right text-rose-400">
                             {tx.debit > 0 ? tx.debit.toLocaleString() : "-"}
@@ -418,8 +604,8 @@ export default function Home() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={5} className="p-4 text-center text-slate-500">
-                          No transactions found or layout requires tailored regex pattern.
+                        <td colSpan={result.is_consolidated ? 6 : 5} className="p-4 text-center text-slate-500">
+                          No transactions found.
                         </td>
                       </tr>
                     )}

@@ -19,6 +19,7 @@ from .parsers.kuda import KudaParser
 from .parsers.moniepoint import MoniepointParser
 from .services.loan_stacking import analyze_loan_stacking
 from .services.narrative_summary import generate_credit_narrative
+from .services.consolidation import consolidate_statements
 
 app = FastAPI(title="Bank Statement Extraction & Credit Scoring API")
 
@@ -71,90 +72,104 @@ def classify_and_parse(extracted_text: str):
     elif "MONIEPOINT" in upper_text:
         return "Moniepoint MFB", MoniepointParser(extracted_text)
         
-    # Default fallback
     return "Unknown Bank / Generic", GTBankParser(extracted_text)
+
+def parse_single_file_sync(file_path: str, filename: str, password: Optional[str] = None) -> Dict[str, Any]:
+    is_pdf = filename.lower().endswith(".pdf")
+    extracted_text = ""
+    
+    if is_pdf:
+        try:
+            with pdfplumber.open(file_path, password=password or "") as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        extracted_text += text + "\n"
+                        
+            if not extracted_text.strip():
+                try:
+                    with pdfplumber.open(file_path, password=password or "") as pdf:
+                        for page in pdf.pages:
+                            img = page.to_image(resolution=200).original
+                            ocr_text = pytesseract.image_to_string(img)
+                            extracted_text += ocr_text + "\n"
+                except Exception as ocr_err:
+                    print(f"OCR error: {ocr_err}")
+        except Exception as pdf_err:
+            err_msg = str(pdf_err)
+            if "password" in err_msg.lower() or "pdfpassword" in str(type(pdf_err)).lower():
+                return {
+                    "error": f"File '{filename}' is password-protected. Please provide the password."
+                }
+            raise pdf_err
+    else:
+        try:
+            img = Image.open(file_path)
+            extracted_text = pytesseract.image_to_string(img)
+        except Exception as ocr_err:
+            print(f"Image OCR error: {ocr_err}")
+
+    bank_name, parser = classify_and_parse(extracted_text)
+    transactions = parser.extract_transactions() if parser else []
+
+    total_income = sum(t.get("credit", 0.0) for t in transactions)
+    total_expenses = sum(t.get("debit", 0.0) for t in transactions)
+    balances = [t.get("balance", 0.0) for t in transactions if "balance" in t]
+    avg_balance = (sum(balances) / len(balances)) if balances else 0.0
+
+    summary = {
+        "total_income": round(total_income, 2),
+        "total_expenses": round(total_expenses, 2),
+        "net_cashflow": round(total_income - total_expenses, 2),
+        "average_balance": round(avg_balance, 2),
+        "transaction_count": len(transactions)
+    }
+
+    loan_stacking = analyze_loan_stacking(transactions, total_income)
+    credit_narrative = generate_credit_narrative(bank_name, summary, loan_stacking, transactions)
+
+    return {
+        "status": "completed",
+        "bank": bank_name,
+        "filename": filename,
+        "summary": summary,
+        "loan_stacking": loan_stacking,
+        "credit_narrative": credit_narrative,
+        "transactions": transactions,
+        "raw_text_preview": extracted_text[:300] if extracted_text else ""
+    }
 
 def process_file_background(job_id: str, file_path: str, filename: str, password: Optional[str] = None):
     jobs_db[job_id]["status"] = "processing"
     try:
-        is_pdf = filename.lower().endswith(".pdf")
-        extracted_text = ""
-        
-        if is_pdf:
-            try:
-                with pdfplumber.open(file_path, password=password or "") as pdf:
-                    for page in pdf.pages:
-                        text = page.extract_text()
-                        if text:
-                            extracted_text += text + "\n"
-                            
-                # Fallback to OCR if scanned/no text
-                if not extracted_text.strip():
-                    try:
-                        with pdfplumber.open(file_path, password=password or "") as pdf:
-                            for page in pdf.pages:
-                                img = page.to_image(resolution=200).original
-                                ocr_text = pytesseract.image_to_string(img)
-                                extracted_text += ocr_text + "\n"
-                    except Exception as ocr_err:
-                        print(f"OCR error: {ocr_err}")
-            except Exception as pdf_err:
-                err_msg = str(pdf_err)
-                if "password" in err_msg.lower() or "pdfpassword" in str(type(pdf_err)).lower():
-                    jobs_db[job_id] = {
-                        "status": "failed",
-                        "error": "This PDF is password-protected. Please enter the password to unlock it."
-                    }
-                    return
-                else:
-                    raise pdf_err
+        res = parse_single_file_sync(file_path, filename, password)
+        if "error" in res:
+            jobs_db[job_id] = {"status": "failed", "error": res["error"]}
         else:
-            # Scanned image (PNG, JPG, TIFF)
-            try:
-                img = Image.open(file_path)
-                extracted_text = pytesseract.image_to_string(img)
-            except Exception as ocr_err:
-                print(f"Image OCR error: {ocr_err}")
+            jobs_db[job_id] = res
+    except Exception as e:
+        jobs_db[job_id] = {"status": "failed", "error": str(e) or "An error occurred during extraction."}
 
-        # Bank Classification
-        bank_name, parser = classify_and_parse(extracted_text)
+def process_multi_files_background(job_id: str, file_tuples: List[tuple]):
+    """Processes multiple statement files and produces a consolidated profile."""
+    jobs_db[job_id]["status"] = "processing"
+    try:
+        account_results = []
+        for file_path, filename, password in file_tuples:
+            res = parse_single_file_sync(file_path, filename, password)
+            if "error" in res:
+                jobs_db[job_id] = {"status": "failed", "error": res["error"]}
+                return
+            account_results.append(res)
 
-        transactions = parser.extract_transactions() if parser else []
-
-        total_income = sum(t.get("credit", 0.0) for t in transactions)
-        total_expenses = sum(t.get("debit", 0.0) for t in transactions)
-        balances = [t.get("balance", 0.0) for t in transactions if "balance" in t]
-        avg_balance = (sum(balances) / len(balances)) if balances else 0.0
-
-        summary = {
-            "total_income": round(total_income, 2),
-            "total_expenses": round(total_expenses, 2),
-            "net_cashflow": round(total_income - total_expenses, 2),
-            "average_balance": round(avg_balance, 2),
-            "transaction_count": len(transactions)
-        }
-
-        # 1. Run Loan-Stacking Risk Detection Engine
-        loan_stacking = analyze_loan_stacking(transactions, total_income)
-
-        # 2. Run Narrative Summary & Credit Assessment Engine
-        credit_narrative = generate_credit_narrative(bank_name, summary, loan_stacking, transactions)
-
+        consolidated_data = consolidate_statements(account_results)
         jobs_db[job_id] = {
             "status": "completed",
-            "bank": bank_name,
-            "filename": filename,
-            "summary": summary,
-            "loan_stacking": loan_stacking,
-            "credit_narrative": credit_narrative,
-            "transactions": transactions,
-            "raw_text_preview": extracted_text[:500] if extracted_text else ""
+            "is_consolidated": True,
+            **consolidated_data
         }
     except Exception as e:
-        jobs_db[job_id] = {
-            "status": "failed",
-            "error": str(e) or "An error occurred during extraction."
-        }
+        jobs_db[job_id] = {"status": "failed", "error": str(e) or "Error consolidating statements."}
 
 @app.get("/")
 def read_root():
@@ -181,6 +196,39 @@ async def upload_statement(
     
     background_tasks.add_task(process_file_background, job_id, dest_path, file.filename, password)
     return {"job_id": job_id, "status": "pending", "message": "Statement upload accepted"}
+
+@app.post("/statements/consolidate")
+async def upload_multiple_statements(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    passwords: Optional[str] = Form(None)  # Comma-separated passwords if any
+):
+    if len(files) < 2:
+        raise HTTPException(status_code=400, detail="Please upload at least 2 bank statements to consolidate.")
+    if len(files) > 3:
+        raise HTTPException(status_code=400, detail="Maximum 3 bank statements can be consolidated at once.")
+
+    job_id = str(uuid.uuid4())
+    pwd_list = [p.strip() for p in (passwords.split(",") if passwords else [])]
+
+    file_tuples = []
+    for idx, f in enumerate(files):
+        file_ext = os.path.splitext(f.filename)[1]
+        saved_filename = f"{job_id}_{idx}{file_ext}"
+        dest_path = os.path.join(UPLOAD_DIR, saved_filename)
+        with open(dest_path, "wb") as buffer:
+            shutil.copyfileobj(f.file, buffer)
+        pwd = pwd_list[idx] if idx < len(pwd_list) else None
+        file_tuples.append((dest_path, f.filename, pwd))
+
+    jobs_db[job_id] = {
+        "status": "pending",
+        "is_consolidated": True,
+        "files_count": len(files)
+    }
+
+    background_tasks.add_task(process_multi_files_background, job_id, file_tuples)
+    return {"job_id": job_id, "status": "pending", "message": "Consolidation job accepted"}
 
 @app.get("/statements/{job_id}")
 def get_statement_status(job_id: str):
