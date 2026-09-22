@@ -13,6 +13,10 @@ from PIL import Image
 from .parsers.gtbank import GTBankParser
 from .parsers.access import AccessBankParser
 from .parsers.uba import UBAParser
+from .parsers.opay import OPayParser
+from .parsers.palmpay import PalmPayParser
+from .parsers.kuda import KudaParser
+from .parsers.moniepoint import MoniepointParser
 from .services.loan_stacking import analyze_loan_stacking
 
 app = FastAPI(title="Bank Statement Extraction & Credit Scoring API")
@@ -44,6 +48,30 @@ def find_tesseract_path():
 tess_path = find_tesseract_path()
 if tess_path:
     pytesseract.pytesseract.tesseract_cmd = tess_path
+
+def classify_and_parse(extracted_text: str):
+    upper_text = extracted_text.upper()
+    
+    # Traditional Banks
+    if "GUARANTY TRUST" in upper_text or "GTBANK" in upper_text:
+        return "GTBank", GTBankParser(extracted_text)
+    elif "ACCESS BANK" in upper_text:
+        return "Access Bank", AccessBankParser(extracted_text)
+    elif "UBA" in upper_text or "UNITED BANK FOR AFRICA" in upper_text:
+        return "UBA", UBAParser(extracted_text)
+        
+    # Neobanks & Fintechs
+    elif "OPAY" in upper_text:
+        return "OPay", OPayParser(extracted_text)
+    elif "PALMPAY" in upper_text:
+        return "PalmPay", PalmPayParser(extracted_text)
+    elif "KUDA" in upper_text:
+        return "Kuda Bank", KudaParser(extracted_text)
+    elif "MONIEPOINT" in upper_text:
+        return "Moniepoint MFB", MoniepointParser(extracted_text)
+        
+    # Default fallback
+    return "Unknown Bank / Generic", GTBankParser(extracted_text)
 
 def process_file_background(job_id: str, file_path: str, filename: str, password: Optional[str] = None):
     jobs_db[job_id]["status"] = "processing"
@@ -87,22 +115,8 @@ def process_file_background(job_id: str, file_path: str, filename: str, password
             except Exception as ocr_err:
                 print(f"Image OCR error: {ocr_err}")
 
-        # Bank Classification
-        upper_text = extracted_text.upper()
-        bank_name = "Unknown"
-        parser = None
-
-        if "GUARANTY TRUST" in upper_text or "GTBANK" in upper_text:
-            bank_name = "GTBank"
-            parser = GTBankParser(extracted_text)
-        elif "ACCESS BANK" in upper_text:
-            bank_name = "Access Bank"
-            parser = AccessBankParser(extracted_text)
-        elif "UBA" in upper_text or "UNITED BANK FOR AFRICA" in upper_text:
-            bank_name = "UBA"
-            parser = UBAParser(extracted_text)
-        else:
-            parser = GTBankParser(extracted_text)
+        # Bank Classification (Traditional + Neobanks)
+        bank_name, parser = classify_and_parse(extracted_text)
 
         transactions = parser.extract_transactions() if parser else []
 
