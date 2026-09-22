@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 
 interface Summary {
+  currency?: string;
   total_income: number;
   total_expenses: number;
   net_cashflow: number;
@@ -87,6 +88,7 @@ interface CreditNarrative {
 interface Transaction {
   date: string;
   description: string;
+  currency?: string;
   debit: number;
   credit: number;
   balance: number;
@@ -116,6 +118,7 @@ interface StatementResult {
   status: string;
   is_consolidated?: boolean;
   bank?: string;
+  currency?: string;
   filename?: string;
   summary?: Summary;
   consolidated_summary?: Summary;
@@ -138,6 +141,7 @@ interface StatementResult {
 
 export default function Home() {
   const [mode, setMode] = useState<"single" | "consolidate">("single");
+  const [countryFilter, setCountryFilter] = useState<"ALL" | "NG" | "GH" | "KE">("ALL");
   const [singleFile, setSingleFile] = useState<File | null>(null);
   const [singlePassword, setSinglePassword] = useState("");
   const [singleWebhook, setSingleWebhook] = useState("");
@@ -256,6 +260,15 @@ export default function Home() {
     }
   };
 
+  const formatCurrencySymbol = (curr?: string) => {
+    if (curr === "GHS") return "GH¢";
+    if (curr === "KES") return "KSh ";
+    return "₦";
+  };
+
+  const activeCurrency = result?.currency || activeSummary?.currency || "NGN";
+  const currSym = formatCurrencySymbol(activeCurrency);
+
   const activeSummary = result?.is_consolidated ? result.consolidated_summary : result?.summary;
   const activeStacking = result?.is_consolidated ? result.consolidated_loan_stacking : result?.loan_stacking;
   const activeNarrative = result?.is_consolidated ? result.consolidated_credit_narrative : result?.credit_narrative;
@@ -266,17 +279,50 @@ export default function Home() {
       <div className="max-w-5xl mx-auto space-y-8">
         <header className="border-b border-slate-800 pb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xl">🌍</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-blue-400">
+                Pan-African Banking Infrastructure
+              </span>
+            </div>
             <h1 className="text-3xl font-bold tracking-tight text-white">
               Bank Statement & Credit Scoring Engine
             </h1>
             <p className="text-slate-400 text-sm mt-1">
-              Document Tampering / Fraud Verification, Webhooks, Loan Stacking & Underwriting Memo.
+              Automated Statement Parsing for Nigeria 🇳🇬, Ghana 🇬🇭, and Kenya 🇰🇪.
             </p>
           </div>
-          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto">
-            API Online
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto">
+              Pan-African API Online
+            </span>
+          </div>
         </header>
+
+        {/* Supported Countries Banner */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center gap-3">
+            <span className="text-2xl">🇳🇬</span>
+            <div>
+              <p className="text-xs font-bold text-white">Nigeria (NGN)</p>
+              <p className="text-[11px] text-slate-400">GTBank, Access, UBA, OPay, PalmPay, Kuda, Moniepoint</p>
+            </div>
+          </div>
+          <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center gap-3">
+            <span className="text-2xl">🇬🇭</span>
+            <div>
+              <p className="text-xs font-bold text-white">Ghana (GHS)</p>
+              <p className="text-[11px] text-slate-400">Consolidated Bank Ghana (CBG), GCB, Ecobank GH</p>
+            </div>
+          </div>
+          <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center gap-3">
+            <span className="text-2xl">🇰🇪</span>
+            <div>
+              <p className="text-xs font-bold text-white">Kenya (KES)</p>
+              <p className="text-[11px] text-slate-400">Equity Bank Kenya, KCB & Safaricom M-PESA</p>
+            </div>
+          </div>
+        </div>
 
         {/* Mode Selector Tabs */}
         <div className="flex border-b border-slate-800 gap-4">
@@ -298,7 +344,7 @@ export default function Home() {
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            <span>Multi-Account Consolidation (2–3 Accounts)</span>
+            <span>Multi-Account Consolidation</span>
             <span className="px-1.5 py-0.5 text-[10px] rounded bg-blue-500/20 text-blue-300 font-bold">
               PRO
             </span>
@@ -309,7 +355,7 @@ export default function Home() {
         <section className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
           {mode === "single" ? (
             <form onSubmit={handleUploadSingle} className="space-y-4">
-              <h2 className="text-lg font-semibold text-white">Upload Single Bank Statement</h2>
+              <h2 className="text-lg font-semibold text-white">Upload Bank / M-PESA Statement</h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
                 <div className="sm:col-span-2">
                   <input
@@ -344,7 +390,7 @@ export default function Home() {
                   disabled={!singleFile || loading}
                   className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-sm transition"
                 >
-                  {loading ? "Verifying & Analyzing..." : "Analyze Statement"}
+                  {loading ? "Analyzing..." : "Analyze Statement"}
                 </button>
               </div>
             </form>
@@ -355,7 +401,7 @@ export default function Home() {
                   Consolidate Multiple Statements (Merge Accounts)
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Select 2 to 3 statements (e.g. GTBank Salary + OPay / Kuda Daily Spending). Automatically eliminates self-transfers and detects fraud!
+                  Supports multi-statement merging across commercial banks, digital wallets, or regional accounts.
                 </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
@@ -393,7 +439,7 @@ export default function Home() {
                   disabled={!multiFiles || multiFiles.length < 2 || loading}
                   className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-sm transition"
                 >
-                  {loading ? "Consolidating & Verifying..." : "Consolidate & Analyze Profile"}
+                  {loading ? "Consolidating..." : "Consolidate & Analyze Profile"}
                 </button>
               </div>
             </form>
@@ -410,7 +456,7 @@ export default function Home() {
         {loading && (
           <div className="flex items-center justify-center p-12 bg-slate-900/50 rounded-xl border border-slate-800 animate-pulse">
             <p className="text-slate-300 font-medium">
-              Inspecting metadata, running balance arithmetic reconciliation & generating credit memo...
+              Classifying African bank format, verifying document authenticity & scoring risk...
             </p>
           </div>
         )}
@@ -494,7 +540,8 @@ export default function Home() {
                   </h3>
                   {result.consolidated_summary?.self_transfers_deduped_count ? (
                     <span className="px-2.5 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
-                      ✓ {result.consolidated_summary.self_transfers_deduped_count} Internal Self-Transfers Deduped (₦
+                      ✓ {result.consolidated_summary.self_transfers_deduped_count} Internal Self-Transfers Deduped (
+                      {currSym}
                       {result.consolidated_summary.self_transfers_volume_deduped?.toLocaleString()})
                     </span>
                   ) : null}
@@ -508,7 +555,7 @@ export default function Home() {
                       </div>
                       <div className="text-slate-400 truncate">{acc.filename}</div>
                       <div className="pt-1 text-emerald-400 font-medium">
-                        Inflow: ₦{acc.total_income.toLocaleString()}
+                        Inflow: {currSym}{acc.total_income.toLocaleString()}
                       </div>
                     </div>
                   ))}
@@ -522,7 +569,7 @@ export default function Home() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
                   <div>
                     <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">
-                      {result.is_consolidated ? "Consolidated Underwriting Memo" : "Single Account Memo"}
+                      {result.is_consolidated ? "Consolidated Underwriting Memo" : "Credit Decision Memo"}
                     </span>
                     <h2 className="text-xl font-bold text-white mt-0.5">
                       Executive Narrative Summary
@@ -551,13 +598,13 @@ export default function Home() {
                   <div className="bg-slate-800/40 p-3.5 rounded-lg border border-slate-700/50">
                     <span className="text-xs text-slate-400">Recommended Max Loan Ticket</span>
                     <p className="text-sm font-bold text-emerald-400 mt-1">
-                      ₦{activeNarrative.recommended_max_loan_capacity.toLocaleString()}
+                      {currSym}{activeNarrative.recommended_max_loan_capacity.toLocaleString()}
                     </p>
                   </div>
                   <div className="bg-slate-800/40 p-3.5 rounded-lg border border-slate-700/50">
                     <span className="text-xs text-slate-400">Safe Monthly Installment Cap</span>
                     <p className="text-sm font-bold text-sky-400 mt-1">
-                      ₦{activeNarrative.recommended_monthly_installment_cap.toLocaleString()}
+                      {currSym}{activeNarrative.recommended_monthly_installment_cap.toLocaleString()}
                     </p>
                   </div>
                 </div>
@@ -584,13 +631,13 @@ export default function Home() {
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
                 <p className="text-xs text-slate-400 font-medium uppercase">Total Real Inflow / Income</p>
                 <p className="text-xl font-bold text-emerald-400 mt-1">
-                  ₦{activeSummary?.total_income.toLocaleString()}
+                  {currSym}{activeSummary?.total_income.toLocaleString()}
                 </p>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
                 <p className="text-xs text-slate-400 font-medium uppercase">Total Real Outflow / Expenses</p>
                 <p className="text-xl font-bold text-rose-400 mt-1">
-                  ₦{activeSummary?.total_expenses.toLocaleString()}
+                  {currSym}{activeSummary?.total_expenses.toLocaleString()}
                 </p>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
@@ -598,7 +645,7 @@ export default function Home() {
                   {result.is_consolidated ? "Combined Avg Balance" : "Average Balance"}
                 </p>
                 <p className="text-xl font-bold text-sky-400 mt-1">
-                  ₦
+                  {currSym}
                   {(
                     activeSummary?.combined_average_balance ||
                     activeSummary?.average_balance ||
@@ -617,7 +664,7 @@ export default function Home() {
                       <span>Loan-Stacking & Multi-Lender Risk</span>
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Cross-account pattern detection matching Nigerian digital lenders (Carbon, FairMoney, Branch, QuickCheck, etc.)
+                      Cross-account pattern detection matching Nigerian and regional digital lenders
                     </p>
                   </div>
                   <span
@@ -639,7 +686,7 @@ export default function Home() {
                   <div className="bg-slate-800/40 rounded-lg p-3.5 border border-slate-700/50">
                     <p className="text-xs text-slate-400">Total Monthly Debt Outflow</p>
                     <p className="text-2xl font-bold text-rose-400 mt-1">
-                      ₦{activeStacking.total_repayments.toLocaleString()}
+                      {currSym}{activeStacking.total_repayments.toLocaleString()}
                     </p>
                   </div>
                   <div className="bg-slate-800/40 rounded-lg p-3.5 border border-slate-700/50">
@@ -653,29 +700,6 @@ export default function Home() {
                 <p className="text-sm text-slate-300 bg-slate-950/60 p-3 rounded-lg border border-slate-800">
                   <span className="font-semibold text-slate-200">Assessment:</span> {activeStacking.risk_description}
                 </p>
-
-                {activeStacking.lenders_breakdown.length > 0 && (
-                  <div className="space-y-2 pt-2">
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      Breakdown by Lender Across All Accounts
-                    </h4>
-                    <div className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-950/40 overflow-hidden text-sm">
-                      {activeStacking.lenders_breakdown.map((lender, i) => (
-                        <div key={i} className="p-3 flex items-center justify-between">
-                          <div>
-                            <span className="font-medium text-white">{lender.lender}</span>
-                            <span className="text-xs text-slate-400 ml-2">
-                              ({lender.repayment_count} repayments)
-                            </span>
-                          </div>
-                          <span className="font-semibold text-rose-400">
-                            -₦{lender.total_repaid.toLocaleString()}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
@@ -686,7 +710,7 @@ export default function Home() {
                   {result.is_consolidated ? "Unified Consolidated Transactions" : "Extracted Transactions"}
                 </h3>
                 <span className="text-xs text-slate-400">
-                  {activeTransactions?.length || 0} records
+                  {activeTransactions?.length || 0} records ({activeCurrency})
                 </span>
               </div>
               <div className="overflow-x-auto max-h-96">
@@ -696,9 +720,9 @@ export default function Home() {
                       <th className="p-3">Date</th>
                       {result.is_consolidated && <th className="p-3">Bank Source</th>}
                       <th className="p-3">Description</th>
-                      <th className="p-3 text-right">Debit (₦)</th>
-                      <th className="p-3 text-right">Credit (₦)</th>
-                      <th className="p-3 text-right">Balance (₦)</th>
+                      <th className="p-3 text-right">Debit ({currSym})</th>
+                      <th className="p-3 text-right">Credit ({currSym})</th>
+                      <th className="p-3 text-right">Balance ({currSym})</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
