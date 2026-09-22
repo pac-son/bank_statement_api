@@ -266,13 +266,13 @@ export default function Home() {
     return "₦";
   };
 
-  const activeCurrency = result?.currency || activeSummary?.currency || "NGN";
-  const currSym = formatCurrencySymbol(activeCurrency);
-
   const activeSummary = result?.is_consolidated ? result.consolidated_summary : result?.summary;
   const activeStacking = result?.is_consolidated ? result.consolidated_loan_stacking : result?.loan_stacking;
   const activeNarrative = result?.is_consolidated ? result.consolidated_credit_narrative : result?.credit_narrative;
   const activeTransactions = result?.is_consolidated ? result.consolidated_transactions : result?.transactions;
+
+  const activeCurrency = result?.currency || activeSummary?.currency || "NGN";
+  const currSym = formatCurrencySymbol(activeCurrency);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-8">
