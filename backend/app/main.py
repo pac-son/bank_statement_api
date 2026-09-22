@@ -13,8 +13,9 @@ from PIL import Image
 from .parsers.gtbank import GTBankParser
 from .parsers.access import AccessBankParser
 from .parsers.uba import UBAParser
+from .services.loan_stacking import analyze_loan_stacking
 
-app = FastAPI(title="Bank Statement Extraction API")
+app = FastAPI(title="Bank Statement Extraction & Credit Scoring API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,7 +28,6 @@ app.add_middleware(
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# In-memory / local task store
 jobs_db: Dict[str, Dict[str, Any]] = {}
 
 def find_tesseract_path():
@@ -102,7 +102,6 @@ def process_file_background(job_id: str, file_path: str, filename: str, password
             bank_name = "UBA"
             parser = UBAParser(extracted_text)
         else:
-            # Fallback default parser
             parser = GTBankParser(extracted_text)
 
         transactions = parser.extract_transactions() if parser else []
@@ -120,11 +119,15 @@ def process_file_background(job_id: str, file_path: str, filename: str, password
             "transaction_count": len(transactions)
         }
 
+        # Run Loan-Stacking & Risk Detection Engine
+        loan_stacking = analyze_loan_stacking(transactions, total_income)
+
         jobs_db[job_id] = {
             "status": "completed",
             "bank": bank_name,
             "filename": filename,
             "summary": summary,
+            "loan_stacking": loan_stacking,
             "transactions": transactions,
             "raw_text_preview": extracted_text[:500] if extracted_text else ""
         }
@@ -136,7 +139,7 @@ def process_file_background(job_id: str, file_path: str, filename: str, password
 
 @app.get("/")
 def read_root():
-    return {"message": "Bank Statement Extraction API (Local Mode)"}
+    return {"message": "Bank Statement Extraction & Credit Scoring API (Local Mode)"}
 
 @app.post("/statements/upload")
 async def upload_statement(

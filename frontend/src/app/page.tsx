@@ -10,6 +10,33 @@ interface Summary {
   transaction_count: number;
 }
 
+interface LenderBreakdown {
+  lender: string;
+  repayment_count: number;
+  total_repaid: number;
+  disbursement_count: number;
+  total_disbursed: number;
+}
+
+interface FlaggedTx {
+  date: string;
+  description: string;
+  lender: string;
+  type: string;
+  amount: number;
+}
+
+interface LoanStacking {
+  risk_level: "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
+  risk_description: string;
+  unique_lenders_count: number;
+  total_repayments: number;
+  total_disbursements: number;
+  debt_to_income_ratio: number;
+  lenders_breakdown: LenderBreakdown[];
+  flagged_transactions: FlaggedTx[];
+}
+
 interface Transaction {
   date: string;
   description: string;
@@ -23,6 +50,7 @@ interface StatementResult {
   bank?: string;
   filename?: string;
   summary?: Summary;
+  loan_stacking?: LoanStacking;
   transactions?: Transaction[];
   error?: string;
 }
@@ -63,7 +91,7 @@ export default function Home() {
       setJobId(data.job_id);
       pollStatus(data.job_id);
     } catch (err: any) {
-      setErrorMsg(err.message || "Network error");
+      setErrorMsg(err.message || "Network error. Is the backend running on port 8000?");
       setLoading(false);
     }
   };
@@ -91,6 +119,21 @@ export default function Home() {
     }, 1500);
   };
 
+  const getRiskBadge = (level?: string) => {
+    switch (level) {
+      case "LOW":
+        return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+      case "MODERATE":
+        return "bg-yellow-500/10 text-yellow-400 border-yellow-500/20";
+      case "HIGH":
+        return "bg-orange-500/10 text-orange-400 border-orange-500/20";
+      case "CRITICAL":
+        return "bg-rose-500/10 text-rose-400 border-rose-500/20 animate-pulse";
+      default:
+        return "bg-slate-800 text-slate-400 border-slate-700";
+    }
+  };
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-8">
       <div className="max-w-5xl mx-auto space-y-8">
@@ -100,7 +143,7 @@ export default function Home() {
               Bank Statement & Credit Scoring Engine
             </h1>
             <p className="text-slate-400 text-sm mt-1">
-              Supports GTBank, Access Bank, and UBA with native PDF, password unlock & OCR fallback.
+              Supports GTBank, Access Bank, UBA + Digital Loan-Stacking Detection Engine.
             </p>
           </div>
           <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -153,7 +196,9 @@ export default function Home() {
         {/* Status / Loading */}
         {loading && (
           <div className="flex items-center justify-center p-12 bg-slate-900/50 rounded-xl border border-slate-800 animate-pulse">
-            <p className="text-slate-300 font-medium">Processing statement text & running bank classifier...</p>
+            <p className="text-slate-300 font-medium">
+              Running extraction, OCR fallback & loan-stacking risk engine...
+            </p>
           </div>
         )}
 
@@ -185,6 +230,78 @@ export default function Home() {
                 </p>
               </div>
             </div>
+
+            {/* Loan-Stacking Detection Engine Card */}
+            {result.loan_stacking && (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <span>Loan-Stacking & Multi-Lender Risk</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Pattern detection matching repayments across Nigerian digital lenders (Carbon, FairMoney, Branch, QuickCheck, etc.)
+                    </p>
+                  </div>
+                  <span
+                    className={`px-3 py-1 text-xs font-bold rounded-full border self-start sm:self-auto ${getRiskBadge(
+                      result.loan_stacking.risk_level
+                    )}`}
+                  >
+                    {result.loan_stacking.risk_level} RISK
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 py-2">
+                  <div className="bg-slate-800/40 rounded-lg p-3.5 border border-slate-700/50">
+                    <p className="text-xs text-slate-400">Active Lenders Detected</p>
+                    <p className="text-2xl font-bold text-white mt-1">
+                      {result.loan_stacking.unique_lenders_count}
+                    </p>
+                  </div>
+                  <div className="bg-slate-800/40 rounded-lg p-3.5 border border-slate-700/50">
+                    <p className="text-xs text-slate-400">Total Loan Servicing Outflows</p>
+                    <p className="text-2xl font-bold text-rose-400 mt-1">
+                      ₦{result.loan_stacking.total_repayments.toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="bg-slate-800/40 rounded-lg p-3.5 border border-slate-700/50">
+                    <p className="text-xs text-slate-400">Debt-to-Income (DTI) Impact</p>
+                    <p className="text-2xl font-bold text-amber-400 mt-1">
+                      {result.loan_stacking.debt_to_income_ratio}%
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-sm text-slate-300 bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                  <span className="font-semibold text-slate-200">Assessment:</span> {result.loan_stacking.risk_description}
+                </p>
+
+                {/* Detected Lenders Table */}
+                {result.loan_stacking.lenders_breakdown.length > 0 && (
+                  <div className="space-y-2 pt-2">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Breakdown by Lender
+                    </h4>
+                    <div className="divide-y divide-slate-800 rounded-lg border border-slate-800 bg-slate-950/40 overflow-hidden text-sm">
+                      {result.loan_stacking.lenders_breakdown.map((lender, i) => (
+                        <div key={i} className="p-3 flex items-center justify-between">
+                          <div>
+                            <span className="font-medium text-white">{lender.lender}</span>
+                            <span className="text-xs text-slate-400 ml-2">
+                              ({lender.repayment_count} repayment transactions)
+                            </span>
+                          </div>
+                          <span className="font-semibold text-rose-400">
+                            -₦{lender.total_repaid.toLocaleString()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Extracted Transactions Table */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
