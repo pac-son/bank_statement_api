@@ -20,6 +20,8 @@ from .parsers.moniepoint import MoniepointParser
 from .services.loan_stacking import analyze_loan_stacking
 from .services.narrative_summary import generate_credit_narrative
 from .services.consolidation import consolidate_statements
+from .services.fraud_detector import evaluate_fraud_risk
+from .services.webhook import dispatch_webhook_notification
 
 app = FastAPI(title="Bank Statement Extraction & Credit Scoring API")
 
@@ -54,15 +56,12 @@ if tess_path:
 def classify_and_parse(extracted_text: str):
     upper_text = extracted_text.upper()
     
-    # Traditional Banks
     if "GUARANTY TRUST" in upper_text or "GTBANK" in upper_text:
         return "GTBank", GTBankParser(extracted_text)
     elif "ACCESS BANK" in upper_text:
         return "Access Bank", AccessBankParser(extracted_text)
     elif "UBA" in upper_text or "UNITED BANK FOR AFRICA" in upper_text:
         return "UBA", UBAParser(extracted_text)
-        
-    # Neobanks & Fintechs
     elif "OPAY" in upper_text:
         return "OPay", OPayParser(extracted_text)
     elif "PALMPAY" in upper_text:
@@ -125,7 +124,13 @@ def parse_single_file_sync(file_path: str, filename: str, password: Optional[str
         "transaction_count": len(transactions)
     }
 
+    # 1. Run Loan-Stacking Analysis
     loan_stacking = analyze_loan_stacking(transactions, total_income)
+
+    # 2. Run Document Tampering & Fraud Detection
+    fraud_evaluation = evaluate_fraud_risk(file_path, transactions)
+
+    # 3. Run Plain-English Narrative Summary
     credit_narrative = generate_credit_narrative(bank_name, summary, loan_stacking, transactions)
 
     return {
@@ -134,12 +139,19 @@ def parse_single_file_sync(file_path: str, filename: str, password: Optional[str
         "filename": filename,
         "summary": summary,
         "loan_stacking": loan_stacking,
+        "fraud_evaluation": fraud_evaluation,
         "credit_narrative": credit_narrative,
         "transactions": transactions,
         "raw_text_preview": extracted_text[:300] if extracted_text else ""
     }
 
-def process_file_background(job_id: str, file_path: str, filename: str, password: Optional[str] = None):
+def process_file_background(
+    job_id: str,
+    file_path: str,
+    filename: str,
+    password: Optional[str] = None,
+    webhook_url: Optional[str] = None
+):
     jobs_db[job_id]["status"] = "processing"
     try:
         res = parse_single_file_sync(file_path, filename, password)
@@ -147,29 +159,63 @@ def process_file_background(job_id: str, file_path: str, filename: str, password
             jobs_db[job_id] = {"status": "failed", "error": res["error"]}
         else:
             jobs_db[job_id] = res
+            if webhook_url:
+                dispatch_webhook_notification(webhook_url, "statement.completed", job_id, res)
     except Exception as e:
         jobs_db[job_id] = {"status": "failed", "error": str(e) or "An error occurred during extraction."}
+        if webhook_url:
+            dispatch_webhook_notification(webhook_url, "statement.failed", job_id, {"error": str(e)})
 
-def process_multi_files_background(job_id: str, file_tuples: List[tuple]):
-    """Processes multiple statement files and produces a consolidated profile."""
+def process_multi_files_background(
+    job_id: str,
+    file_tuples: List[tuple],
+    webhook_url: Optional[str] = None
+):
     jobs_db[job_id]["status"] = "processing"
     try:
         account_results = []
+        overall_fraud_list = []
+
         for file_path, filename, password in file_tuples:
             res = parse_single_file_sync(file_path, filename, password)
             if "error" in res:
                 jobs_db[job_id] = {"status": "failed", "error": res["error"]}
+                if webhook_url:
+                    dispatch_webhook_notification(webhook_url, "statement.failed", job_id, {"error": res["error"]})
                 return
             account_results.append(res)
+            if "fraud_evaluation" in res:
+                overall_fraud_list.append({
+                    "filename": filename,
+                    "bank": res.get("bank"),
+                    **res["fraud_evaluation"]
+                })
 
         consolidated_data = consolidate_statements(account_results)
-        jobs_db[job_id] = {
+        
+        # Determine aggregate fraud across all merged files
+        max_fraud_score = max([f.get("fraud_score", 0) for f in overall_fraud_list], default=0)
+        consolidated_fraud = {
+            "max_fraud_score": max_fraud_score,
+            "is_tampered": max_fraud_score >= 30,
+            "files_breakdown": overall_fraud_list
+        }
+
+        final_res = {
             "status": "completed",
             "is_consolidated": True,
+            "consolidated_fraud": consolidated_fraud,
             **consolidated_data
         }
+        jobs_db[job_id] = final_res
+
+        if webhook_url:
+            dispatch_webhook_notification(webhook_url, "statement.consolidated", job_id, final_res)
+
     except Exception as e:
         jobs_db[job_id] = {"status": "failed", "error": str(e) or "Error consolidating statements."}
+        if webhook_url:
+            dispatch_webhook_notification(webhook_url, "statement.failed", job_id, {"error": str(e)})
 
 @app.get("/")
 def read_root():
@@ -179,7 +225,8 @@ def read_root():
 async def upload_statement(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    password: Optional[str] = Form(None)
+    password: Optional[str] = Form(None),
+    webhook_url: Optional[str] = Form(None)
 ):
     job_id = str(uuid.uuid4())
     file_ext = os.path.splitext(file.filename)[1]
@@ -191,17 +238,19 @@ async def upload_statement(
         
     jobs_db[job_id] = {
         "status": "pending",
-        "filename": file.filename
+        "filename": file.filename,
+        "webhook_url": webhook_url
     }
     
-    background_tasks.add_task(process_file_background, job_id, dest_path, file.filename, password)
+    background_tasks.add_task(process_file_background, job_id, dest_path, file.filename, password, webhook_url)
     return {"job_id": job_id, "status": "pending", "message": "Statement upload accepted"}
 
 @app.post("/statements/consolidate")
 async def upload_multiple_statements(
     background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
-    passwords: Optional[str] = Form(None)  # Comma-separated passwords if any
+    passwords: Optional[str] = Form(None),
+    webhook_url: Optional[str] = Form(None)
 ):
     if len(files) < 2:
         raise HTTPException(status_code=400, detail="Please upload at least 2 bank statements to consolidate.")
@@ -224,10 +273,11 @@ async def upload_multiple_statements(
     jobs_db[job_id] = {
         "status": "pending",
         "is_consolidated": True,
-        "files_count": len(files)
+        "files_count": len(files),
+        "webhook_url": webhook_url
     }
 
-    background_tasks.add_task(process_multi_files_background, job_id, file_tuples)
+    background_tasks.add_task(process_multi_files_background, job_id, file_tuples, webhook_url)
     return {"job_id": job_id, "status": "pending", "message": "Consolidation job accepted"}
 
 @app.get("/statements/{job_id}")

@@ -42,6 +42,34 @@ interface LoanStacking {
   flagged_transactions: FlaggedTx[];
 }
 
+interface FraudEvaluation {
+  fraud_score: number;
+  overall_status: string;
+  badge: string;
+  is_tampered: boolean;
+  reasons: string[];
+  metadata_forensics?: {
+    status: string;
+    passed: boolean;
+    metadata?: {
+      producer?: string;
+      creator?: string;
+    };
+    flags?: string[];
+  };
+  balance_reconciliation?: {
+    status: string;
+    passed: boolean;
+    discrepancies_count: number;
+    message: string;
+  };
+  font_uniformity?: {
+    status: string;
+    passed: boolean;
+    message: string;
+  };
+}
+
 interface CreditNarrative {
   recommendation: string;
   recommendation_badge: string;
@@ -95,6 +123,12 @@ interface StatementResult {
   self_transfers_detected?: SelfTransfer[];
   loan_stacking?: LoanStacking;
   consolidated_loan_stacking?: LoanStacking;
+  fraud_evaluation?: FraudEvaluation;
+  consolidated_fraud?: {
+    max_fraud_score: number;
+    is_tampered: boolean;
+    files_breakdown: any[];
+  };
   credit_narrative?: CreditNarrative;
   consolidated_credit_narrative?: CreditNarrative;
   transactions?: Transaction[];
@@ -106,9 +140,12 @@ export default function Home() {
   const [mode, setMode] = useState<"single" | "consolidate">("single");
   const [singleFile, setSingleFile] = useState<File | null>(null);
   const [singlePassword, setSinglePassword] = useState("");
+  const [singleWebhook, setSingleWebhook] = useState("");
+
   const [multiFiles, setMultiFiles] = useState<FileList | null>(null);
   const [multiPasswords, setMultiPasswords] = useState("");
-  
+  const [multiWebhook, setMultiWebhook] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<StatementResult | null>(null);
@@ -125,6 +162,7 @@ export default function Home() {
     const formData = new FormData();
     formData.append("file", singleFile);
     if (singlePassword) formData.append("password", singlePassword);
+    if (singleWebhook) formData.append("webhook_url", singleWebhook);
 
     try {
       const res = await fetch("http://127.0.0.1:8000/statements/upload", {
@@ -158,6 +196,7 @@ export default function Home() {
       formData.append("files", multiFiles[i]);
     }
     if (multiPasswords) formData.append("passwords", multiPasswords);
+    if (multiWebhook) formData.append("webhook_url", multiWebhook);
 
     try {
       const res = await fetch("http://127.0.0.1:8000/statements/consolidate", {
@@ -231,7 +270,7 @@ export default function Home() {
               Bank Statement & Credit Scoring Engine
             </h1>
             <p className="text-slate-400 text-sm mt-1">
-              Supports GTBank, Access, UBA, OPay, PalmPay, Kuda & Multi-Statement Consolidation.
+              Document Tampering / Fraud Verification, Webhooks, Loan Stacking & Underwriting Memo.
             </p>
           </div>
           <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto">
@@ -290,13 +329,22 @@ export default function Home() {
                   />
                 </div>
               </div>
+              <div>
+                <input
+                  type="url"
+                  placeholder="Optional Webhook Notification URL (e.g. https://your-app.com/api/webhooks)"
+                  value={singleWebhook}
+                  onChange={(e) => setSingleWebhook(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
+              </div>
               <div className="flex justify-end">
                 <button
                   type="submit"
                   disabled={!singleFile || loading}
                   className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-sm transition"
                 >
-                  {loading ? "Analyzing..." : "Analyze Statement"}
+                  {loading ? "Verifying & Analyzing..." : "Analyze Statement"}
                 </button>
               </div>
             </form>
@@ -307,7 +355,7 @@ export default function Home() {
                   Consolidate Multiple Statements (Merge Accounts)
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Select 2 to 3 statements (e.g. GTBank Salary + OPay / Kuda Daily Spending). Automatically eliminates self-transfers!
+                  Select 2 to 3 statements (e.g. GTBank Salary + OPay / Kuda Daily Spending). Automatically eliminates self-transfers and detects fraud!
                 </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
@@ -319,9 +367,6 @@ export default function Home() {
                     onChange={(e) => setMultiFiles(e.target.files)}
                     className="file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 text-sm text-slate-400 w-full cursor-pointer bg-slate-800/40 rounded-lg p-1.5 border border-slate-700/60"
                   />
-                  <span className="text-[11px] text-slate-500 mt-1 block">
-                    Hold Ctrl or Shift to select 2 to 3 files.
-                  </span>
                 </div>
                 <div>
                   <input
@@ -333,13 +378,22 @@ export default function Home() {
                   />
                 </div>
               </div>
+              <div>
+                <input
+                  type="url"
+                  placeholder="Optional Webhook Notification URL (e.g. https://your-app.com/api/webhooks)"
+                  value={multiWebhook}
+                  onChange={(e) => setMultiWebhook(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
+              </div>
               <div className="flex justify-end">
                 <button
                   type="submit"
                   disabled={!multiFiles || multiFiles.length < 2 || loading}
                   className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-sm transition"
                 >
-                  {loading ? "Consolidating & Deduping..." : "Consolidate & Analyze Profile"}
+                  {loading ? "Consolidating & Verifying..." : "Consolidate & Analyze Profile"}
                 </button>
               </div>
             </form>
@@ -356,7 +410,7 @@ export default function Home() {
         {loading && (
           <div className="flex items-center justify-center p-12 bg-slate-900/50 rounded-xl border border-slate-800 animate-pulse">
             <p className="text-slate-300 font-medium">
-              Extracting statements, deduping internal self-transfers & building unified credit profile...
+              Inspecting metadata, running balance arithmetic reconciliation & generating credit memo...
             </p>
           </div>
         )}
@@ -364,6 +418,73 @@ export default function Home() {
         {/* Results View */}
         {result && result.status === "completed" && (
           <div className="space-y-6">
+            {/* Document Tampering & Fraud Detection Banner */}
+            {result.fraud_evaluation && (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🛡️</span>
+                    <div>
+                      <h3 className="font-bold text-white text-base">
+                        Document Authenticity & Tampering Analysis
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        PDF metadata forensic audit, font uniformity, and arithmetic balance reconciliation
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg border uppercase tracking-wider self-start sm:self-auto ${result.fraud_evaluation.badge}`}
+                  >
+                    {result.fraud_evaluation.overall_status} (Score: {result.fraud_evaluation.fraud_score}/100)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                    <span className="text-slate-400">Balance Arithmetic Check</span>
+                    <p className={`font-semibold mt-1 ${result.fraud_evaluation.balance_reconciliation?.passed ? "text-emerald-400" : "text-rose-400"}`}>
+                      {result.fraud_evaluation.balance_reconciliation?.passed ? "✓ Math Verified" : "✗ Discrepancies Found"}
+                    </p>
+                    <p className="text-slate-500 text-[11px] mt-0.5">
+                      {result.fraud_evaluation.balance_reconciliation?.message}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                    <span className="text-slate-400">Producer & Creator Metadata</span>
+                    <p className={`font-semibold mt-1 ${result.fraud_evaluation.metadata_forensics?.passed ? "text-emerald-400" : "text-rose-400"}`}>
+                      {result.fraud_evaluation.metadata_forensics?.passed ? "✓ Core Banking Export" : "✗ Suspicious Tool"}
+                    </p>
+                    <p className="text-slate-500 text-[11px] mt-0.5 truncate">
+                      {result.fraud_evaluation.metadata_forensics?.metadata?.producer || "Genuine"}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                    <span className="text-slate-400">Font Uniformity</span>
+                    <p className={`font-semibold mt-1 ${result.fraud_evaluation.font_uniformity?.passed ? "text-emerald-400" : "text-amber-400"}`}>
+                      {result.fraud_evaluation.font_uniformity?.passed ? "✓ Uniform Standard Fonts" : "⚠ Spliced Text Layer"}
+                    </p>
+                    <p className="text-slate-500 text-[11px] mt-0.5">
+                      {result.fraud_evaluation.font_uniformity?.message}
+                    </p>
+                  </div>
+                </div>
+
+                {result.fraud_evaluation.reasons && result.fraud_evaluation.reasons.length > 0 && (
+                  <div className="p-3 bg-rose-950/30 border border-rose-900/40 rounded-lg text-xs text-rose-300 space-y-1">
+                    <span className="font-bold">Specific Tampering Warnings:</span>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      {result.fraud_evaluation.reasons.map((r, idx) => (
+                        <li key={idx}>{r}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Multi-Account Overview Pills (If Consolidated) */}
             {result.is_consolidated && result.accounts_overview && (
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
