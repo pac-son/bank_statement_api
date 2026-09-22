@@ -303,3 +303,10 @@ def get_statement_status(job_id: str):
     if job_id not in jobs_db:
         raise HTTPException(status_code=404, detail="Job not found")
     return jobs_db[job_id]
+
+# Mount frontend static build if present
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
+if os.path.exists(STATIC_DIR):
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+
