@@ -185,4 +185,5 @@
 
   // Expose to window global scope
   window.BankStatementWidget = BankStatementWidget;
+  window.CredovaWidget = BankStatementWidget;
 })();

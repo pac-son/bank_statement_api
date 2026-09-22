@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 
+declare const process: any;
+
 interface Summary {
   currency?: string;
   total_income: number;
@@ -150,7 +152,8 @@ const getApiBase = () => {
 const API_BASE = getApiBase();
 
 export default function Home() {
-  const [mode, setMode] = useState<"single" | "consolidate">("single");
+  const [mode, setMode] = useState<"single" | "consolidate" | "api_docs">("single");
+  const [codeLang, setCodeLang] = useState<"curl" | "python" | "node">("curl");
   const [countryFilter, setCountryFilter] = useState<"ALL" | "NG" | "GH" | "KE">("ALL");
   const [singleFile, setSingleFile] = useState<File | null>(null);
   const [singlePassword, setSinglePassword] = useState("");
@@ -163,6 +166,35 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<StatementResult | null>(null);
+
+  const launchTestWidget = () => {
+    if (typeof window === "undefined") return;
+    const launch = () => {
+      const WidgetClass = (window as any).CredovaWidget || (window as any).BankStatementWidget;
+      if (WidgetClass) {
+        const widget = new WidgetClass({
+          apiUrl: API_BASE || window.location.origin,
+          lenderName: "Demo Partner Lender",
+          onSuccess: (data: any) => {
+            alert(`Assessment Completed for ${data.bank_name}! Decision: ${data.credit_narrative?.recommendation || 'APPROVED'}`);
+          },
+          onError: (err: any) => {
+            alert(`Widget error: ${err.message}`);
+          }
+        });
+        widget.open();
+      }
+    };
+
+    if (!(window as any).CredovaWidget && !(window as any).BankStatementWidget) {
+      const script = document.createElement("script");
+      script.src = "/widget.js";
+      script.onload = launch;
+      document.body.appendChild(script);
+    } else {
+      launch();
+    }
+  };
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleUploadSingle = async (e: React.FormEvent) => {
@@ -207,7 +239,8 @@ export default function Home() {
 
     const formData = new FormData();
     for (let i = 0; i < multiFiles.length; i++) {
-      formData.append("files", multiFiles[i]);
+      const f = multiFiles[i];
+      if (f) formData.append("files", f);
     }
     if (multiPasswords) formData.append("passwords", multiPasswords);
     if (multiWebhook) formData.append("webhook_url", multiWebhook);
@@ -365,6 +398,19 @@ export default function Home() {
               PRO
             </span>
           </button>
+          <button
+            onClick={() => setMode("api_docs")}
+            className={`pb-3 text-sm font-semibold border-b-2 transition flex items-center gap-1.5 ${
+              mode === "api_docs"
+                ? "border-blue-500 text-blue-400"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <span>Developer API & SDK</span>
+            <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-500/20 text-emerald-400 font-bold">
+              DOCS
+            </span>
+          </button>
         </div>
 
         {/* Upload Form */}
@@ -410,7 +456,7 @@ export default function Home() {
                 </button>
               </div>
             </form>
-          ) : (
+          ) : mode === "consolidate" ? (
             <form onSubmit={handleUploadConsolidate} className="space-y-4">
               <div>
                 <h2 className="text-lg font-semibold text-white">
@@ -459,6 +505,180 @@ export default function Home() {
                 </button>
               </div>
             </form>
+          ) : (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">⚡</span>
+                    <h2 className="text-lg font-bold text-white">
+                      Credova Developer API & SDK Hub
+                    </h2>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Integrate automated bank statement parsing, loan stacking detection, and credit scoring directly into your loan engine.
+                  </p>
+                </div>
+                <a
+                  href="/docs"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5 transition self-start sm:self-auto shadow-sm shadow-blue-500/20"
+                >
+                  <span>Interactive Swagger Docs (/docs)</span>
+                  <span>↗</span>
+                </a>
+              </div>
+
+              {/* Endpoints Table */}
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Core API Endpoints</h3>
+                <div className="bg-slate-950/80 rounded-lg border border-slate-800 overflow-hidden divide-y divide-slate-800/60 font-mono text-xs">
+                  <div className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-bold">POST</span>
+                      <span className="text-slate-200">/statements/upload</span>
+                    </div>
+                    <span className="text-slate-400 font-sans text-xs">Upload single PDF statement + password + webhook</span>
+                  </div>
+                  <div className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 font-bold">POST</span>
+                      <span className="text-slate-200">/statements/consolidate</span>
+                    </div>
+                    <span className="text-slate-400 font-sans text-xs">Consolidate 2-5 statements with cross-account self-transfer deduping</span>
+                  </div>
+                  <div className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold">GET</span>
+                      <span className="text-slate-200">/statements/&#123;job_id&#125;</span>
+                    </div>
+                    <span className="text-slate-400 font-sans text-xs">Poll status & retrieve full underwriting assessment</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Code Snippets Tabs */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCodeLang("curl")}
+                      className={`px-3 py-1 rounded-md text-xs font-semibold transition ${
+                        codeLang === "curl" ? "bg-slate-800 text-blue-400 border border-slate-700" : "text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      cURL
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCodeLang("python")}
+                      className={`px-3 py-1 rounded-md text-xs font-semibold transition ${
+                        codeLang === "python" ? "bg-slate-800 text-blue-400 border border-slate-700" : "text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      Python
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCodeLang("node")}
+                      className={`px-3 py-1 rounded-md text-xs font-semibold transition ${
+                        codeLang === "node" ? "bg-slate-800 text-blue-400 border border-slate-700" : "text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      Node.js / TS
+                    </button>
+                  </div>
+                </div>
+
+                <div className="relative bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs overflow-x-auto text-slate-300">
+                  {codeLang === "curl" && (
+                    <pre>{`# 1. Upload statement for async processing
+curl -X POST "${API_BASE || 'https://credova-api.onrender.com'}/statements/upload" \\
+  -F "file=@bank_statement.pdf" \\
+  -F "password=optional_pdf_password" \\
+  -F "webhook_url=https://your-lending-app.com/api/webhooks"
+
+# Response returns Job ID immediately:
+# { "job_id": "786cc1a4-9941-438d-9379-0740fcef10d4", "status": "pending" }
+
+# 2. Retrieve decision & underwriting metrics:
+curl "${API_BASE || 'https://credova-api.onrender.com'}/statements/786cc1a4-9941-438d-9379-0740fcef10d4"`}</pre>
+                  )}
+                  {codeLang === "python" && (
+                    <pre>{`import requests
+
+url = "${API_BASE || 'https://credova-api.onrender.com'}/statements/upload"
+files = {"file": open("customer_statement.pdf", "rb")}
+data = {
+    "password": "customer_password_if_any",
+    "webhook_url": "https://your-lending-app.com/api/webhooks"
+}
+
+response = requests.post(url, files=files, data=data)
+job = response.json()
+print("Job ID:", job["job_id"])`}</pre>
+                  )}
+                  {codeLang === "node" && (
+                    <pre>{`import FormData from "form-data";
+import fs from "fs";
+import axios from "axios";
+
+const form = new FormData();
+form.append("file", fs.createReadStream("customer_statement.pdf"));
+form.append("password", "optional_password");
+form.append("webhook_url", "https://your-lending-app.com/api/webhooks");
+
+const res = await axios.post(
+  "${API_BASE || 'https://credova-api.onrender.com'}/statements/upload",
+  form,
+  { headers: form.getHeaders() }
+);
+
+console.log("Job ID:", res.data.job_id);`}</pre>
+                  )}
+                </div>
+              </div>
+
+              {/* Embeddable Drop-In Widget */}
+              <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                      <span>📱</span> Embeddable Borrower Upload Widget
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Add a white-labeled bank statement uploader directly to your checkout or loan flow with 3 lines of JavaScript.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={launchTestWidget}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 transition self-start sm:self-auto flex items-center gap-1"
+                  >
+                    <span>Test-Drive Live Widget</span>
+                    <span>▶</span>
+                  </button>
+                </div>
+
+                <div className="bg-slate-900/90 p-3 rounded-lg border border-slate-800 font-mono text-xs text-slate-300 overflow-x-auto">
+                  <pre>{`<script src="${API_BASE || 'https://credova-api.onrender.com'}/widget.js"></script>
+<script>
+  const widget = new CredovaWidget({
+    apiUrl: "${API_BASE || 'https://credova-api.onrender.com'}",
+    lenderName: "Your Brand",
+    onSuccess: function (data) {
+      console.log("Decision:", data.credit_narrative.recommendation);
+      console.log("Max Loan Capacity:", data.credit_narrative.recommended_max_loan_capacity);
+    }
+  });
+  // Open modal on user click
+  document.getElementById("upload-btn").onclick = () => widget.open();
+</script>`}</pre>
+                </div>
+              </div>
+            </div>
           )}
 
           {errorMsg && (

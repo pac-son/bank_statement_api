@@ -7,6 +7,12 @@
 <meta name="description" content="Credova: Automated Bank Statement Parsing, Fraud Detection, Loan-Stacking Risk Analysis, and Financial Underwriting for Nigeria, Ghana, and Kenya." />
 <link rel="icon" href="/favicon.ico" sizes="any" />
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist&display=swap" data-swift-rust-google-font="__swift_rust_font_geist" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono&display=swap" data-swift-rust-google-font="__swift_rust_font_geist_mono" />
+<style data-swift-rust-google-fonts>.__swift_rust_font_geist{font-family:'Geist', system-ui, sans-serif}.__swift_rust_font_geist_variable{--font-geist:'Geist', system-ui, sans-serif}
+.__swift_rust_font_geist_mono{font-family:'Geist Mono', system-ui, sans-serif}.__swift_rust_font_geist_mono_variable{--font-geist-mono:'Geist Mono', system-ui, sans-serif}</style>
 <style data-swift-rust-globals>/*! tailwindcss v4.3.3 | MIT License | https://tailwindcss.com */
 @layer properties;
 @layer theme, base, components, utilities;
@@ -29,6 +35,7 @@
     --color-blue-600: oklch(54.6% 0.245 262.881);
     --color-blue-900: oklch(37.9% 0.146 265.522);
     --color-blue-950: oklch(28.2% 0.091 267.935);
+    --color-indigo-400: oklch(67.3% 0.182 276.935);
     --color-indigo-500: oklch(58.5% 0.233 277.117);
     --color-rose-300: oklch(81% 0.117 11.638);
     --color-rose-400: oklch(71.2% 0.194 13.428);
@@ -318,6 +325,9 @@
   .mb-1\.5 {
     margin-bottom: calc(var(--spacing) * 1.5);
   }
+  .mb-2 {
+    margin-bottom: calc(var(--spacing) * 2);
+  }
   .block {
     display: block;
   }
@@ -423,11 +433,17 @@
   .justify-end {
     justify-content: flex-end;
   }
+  .gap-1 {
+    gap: var(--spacing);
+  }
   .gap-1\.5 {
     gap: calc(var(--spacing) * 1.5);
   }
   .gap-2 {
     gap: calc(var(--spacing) * 2);
+  }
+  .gap-2\.5 {
+    gap: calc(var(--spacing) * 2.5);
   }
   .gap-3 {
     gap: calc(var(--spacing) * 3);
@@ -480,6 +496,12 @@
   :where(.divide-slate-800 > :not(:last-child)) {
     border-color: var(--color-slate-800);
   }
+  :where(.divide-slate-800\/60 > :not(:last-child)) {
+    border-color: color-mix(in srgb, oklch(27.9% 0.041 260.031) 60%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-slate-800) 60%, transparent);
+    }
+  }
   .self-start {
     align-self: flex-start;
   }
@@ -505,6 +527,9 @@
   }
   .rounded-lg {
     border-radius: var(--radius-lg);
+  }
+  .rounded-md {
+    border-radius: var(--radius-md);
   }
   .rounded-xl {
     border-radius: var(--radius-xl);
@@ -540,6 +565,12 @@
     border-color: color-mix(in srgb, oklch(69.6% 0.17 162.48) 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       border-color: color-mix(in oklab, var(--color-emerald-500) 20%, transparent);
+    }
+  }
+  .border-emerald-500\/30 {
+    border-color: color-mix(in srgb, oklch(69.6% 0.17 162.48) 30%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-emerald-500) 30%, transparent);
     }
   }
   .border-orange-500\/20 {
@@ -623,6 +654,18 @@
       background-color: color-mix(in oklab, var(--color-emerald-500) 10%, transparent);
     }
   }
+  .bg-emerald-500\/20 {
+    background-color: color-mix(in srgb, oklch(69.6% 0.17 162.48) 20%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-emerald-500) 20%, transparent);
+    }
+  }
+  .bg-indigo-500\/20 {
+    background-color: color-mix(in srgb, oklch(58.5% 0.233 277.117) 20%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-indigo-500) 20%, transparent);
+    }
+  }
   .bg-orange-500\/10 {
     background-color: color-mix(in srgb, oklch(70.5% 0.213 47.604) 10%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -675,6 +718,12 @@
     background-color: color-mix(in srgb, oklch(20.8% 0.042 265.755) 50%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-slate-900) 50%, transparent);
+    }
+  }
+  .bg-slate-900\/90 {
+    background-color: color-mix(in srgb, oklch(20.8% 0.042 265.755) 90%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-slate-900) 90%, transparent);
     }
   }
   .bg-slate-950 {
@@ -739,6 +788,9 @@
   }
   .px-1\.5 {
     padding-inline: calc(var(--spacing) * 1.5);
+  }
+  .px-2 {
+    padding-inline: calc(var(--spacing) * 2);
   }
   .px-2\.5 {
     padding-inline: calc(var(--spacing) * 2.5);
@@ -917,6 +969,9 @@
   .text-fg-subtle {
     color: var(--color-fg-subtle);
   }
+  .text-indigo-400 {
+    color: var(--color-indigo-400);
+  }
   .text-orange-400 {
     color: var(--color-orange-400);
   }
@@ -1035,6 +1090,14 @@
     .hover\:bg-blue-500:hover {
       background-color: var(--color-blue-500);
     }
+    .hover\:bg-emerald-500\/30:hover {
+      background-color: color-mix(in srgb, oklch(69.6% 0.17 162.48) 30%, transparent);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .hover\:bg-emerald-500\/30:hover {
+        background-color: color-mix(in oklab, var(--color-emerald-500) 30%, transparent);
+      }
+    }
     .hover\:bg-slate-800\/30:hover {
       background-color: color-mix(in srgb, oklch(27.9% 0.041 260.031) 30%, transparent);
     }
@@ -1045,6 +1108,9 @@
     }
     .hover\:text-slate-200:hover {
       color: var(--color-slate-200);
+    }
+    .hover\:text-white:hover {
+      color: var(--color-white);
     }
     .hover\:file\:bg-blue-500:hover::file-selector-button {
       background-color: var(--color-blue-500);
@@ -1555,7 +1621,7 @@
 </style>
 <script src="/_swift-rust/navigator.js" defer></script>
 </head>
-<body><!DOCTYPE html><html lang="en" class="__swift_rust_font_geist_variable __swift_rust_font_geist_mono_variable __swift_rust_font_geist __swift_rust_font_geist_mono" style="--font-sans:&#x27;Geist&#x27;, system-ui, sans-serif;--font-mono:&#x27;Geist Mono&#x27;, ui-monospace, monospace"><head></head><body class="min-h-screen bg-slate-950 font-sans text-slate-100 antialiased selection:bg-blue-500/30 selection:text-blue-200"><div id="__sr_island_root" data-sr-params="{}"><div data-sr-island="" data-sr-island-src="C:\Users\Admin\Desktop\bank_statement_api\frontend\src\app\page.tsx" data-sr-island-export="default" data-sr-island-props="{&quot;params&quot;:{}}" style="display:contents"><main class="min-h-screen bg-slate-950 text-slate-100 p-8"><div class="max-w-5xl mx-auto space-y-8"><header class="border-b border-slate-800 pb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div class="flex items-center gap-2 mb-1.5"><span class="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 text-white font-black text-sm shadow-md shadow-blue-500/20">C</span><span class="text-xs font-bold uppercase tracking-wider text-blue-400">Pan-African Statement Intelligence</span></div><h1 class="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">Credova<span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider">Underwriting Engine</span></h1><p class="text-slate-400 text-sm mt-1">Automated Statement Parsing, Fraud Forensics &amp; Risk Analytics for Nigeria 🇳🇬, Ghana 🇬🇭, and Kenya 🇰🇪.</p></div><div class="flex items-center gap-2"><span class="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Credova Core Online</span></div></header><div class="grid grid-cols-1 sm:grid-cols-3 gap-3"><div class="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center gap-3"><span class="text-2xl">🇳🇬</span><div><p class="text-xs font-bold text-white">Nigeria (NGN)</p><p class="text-[11px] text-slate-400">GTBank, Access, UBA, OPay, PalmPay, Kuda, Moniepoint</p></div></div><div class="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center gap-3"><span class="text-2xl">🇬🇭</span><div><p class="text-xs font-bold text-white">Ghana (GHS)</p><p class="text-[11px] text-slate-400">Consolidated Bank Ghana (CBG), GCB, Ecobank GH</p></div></div><div class="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center gap-3"><span class="text-2xl">🇰🇪</span><div><p class="text-xs font-bold text-white">Kenya (KES)</p><p class="text-[11px] text-slate-400">Equity Bank Kenya, KCB &amp; Safaricom M-PESA</p></div></div></div><div class="flex border-b border-slate-800 gap-4"><button class="pb-3 text-sm font-semibold border-b-2 transition border-blue-500 text-blue-400">Single Statement Analysis</button><button class="pb-3 text-sm font-semibold border-b-2 transition flex items-center gap-1.5 border-transparent text-slate-400 hover:text-slate-200"><span>Multi-Account Consolidation</span><span class="px-1.5 py-0.5 text-[10px] rounded bg-blue-500/20 text-blue-300 font-bold">PRO</span></button></div><section class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm"><form class="space-y-4"><h2 class="text-lg font-semibold text-white">Upload Bank / M-PESA Statement</h2><div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center"><div class="sm:col-span-2"><input type="file" accept=".pdf,image/*" class="file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 text-sm text-slate-400 w-full cursor-pointer bg-slate-800/40 rounded-lg p-1.5 border border-slate-700/60"/></div><div><input type="password" placeholder="PDF Password (if protected)" class="w-full px-4 py-2.5 rounded-lg bg-slate-800/60 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" value=""/></div></div><div><input type="url" placeholder="Optional Webhook Notification URL (e.g. https://your-app.com/api/webhooks)" class="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500" value=""/></div><div class="flex justify-end"><button type="submit" disabled="" class="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-sm transition">Analyze Statement</button></div></form></section></div></main></div></div><script type="module" src="/_swift-rust/island/pf6y8q.js"></script>
+<body><!DOCTYPE html><html lang="en" class="__swift_rust_font_geist_variable __swift_rust_font_geist_mono_variable __swift_rust_font_geist __swift_rust_font_geist_mono" style="--font-sans:&#x27;Geist&#x27;, system-ui, sans-serif;--font-mono:&#x27;Geist Mono&#x27;, ui-monospace, monospace"><head></head><body class="min-h-screen bg-slate-950 font-sans text-slate-100 antialiased selection:bg-blue-500/30 selection:text-blue-200"><div id="__sr_island_root" data-sr-params="{}"><div data-sr-island="" data-sr-island-src="C:\Users\Admin\Desktop\bank_statement_api\frontend\src\app\page.tsx" data-sr-island-export="default" data-sr-island-props="{&quot;params&quot;:{}}" style="display:contents"><main class="min-h-screen bg-slate-950 text-slate-100 p-8"><div class="max-w-5xl mx-auto space-y-8"><header class="border-b border-slate-800 pb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div class="flex items-center gap-2 mb-1.5"><span class="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 text-white font-black text-sm shadow-md shadow-blue-500/20">C</span><span class="text-xs font-bold uppercase tracking-wider text-blue-400">Pan-African Statement Intelligence</span></div><h1 class="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">Credova<span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider">Underwriting Engine</span></h1><p class="text-slate-400 text-sm mt-1">Automated Statement Parsing, Fraud Forensics &amp; Risk Analytics for Nigeria 🇳🇬, Ghana 🇬🇭, and Kenya 🇰🇪.</p></div><div class="flex items-center gap-2"><span class="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Credova Core Online</span></div></header><div class="grid grid-cols-1 sm:grid-cols-3 gap-3"><div class="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center gap-3"><span class="text-2xl">🇳🇬</span><div><p class="text-xs font-bold text-white">Nigeria (NGN)</p><p class="text-[11px] text-slate-400">GTBank, Access, UBA, OPay, PalmPay, Kuda, Moniepoint</p></div></div><div class="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center gap-3"><span class="text-2xl">🇬🇭</span><div><p class="text-xs font-bold text-white">Ghana (GHS)</p><p class="text-[11px] text-slate-400">Consolidated Bank Ghana (CBG), GCB, Ecobank GH</p></div></div><div class="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center gap-3"><span class="text-2xl">🇰🇪</span><div><p class="text-xs font-bold text-white">Kenya (KES)</p><p class="text-[11px] text-slate-400">Equity Bank Kenya, KCB &amp; Safaricom M-PESA</p></div></div></div><div class="flex border-b border-slate-800 gap-4"><button class="pb-3 text-sm font-semibold border-b-2 transition border-blue-500 text-blue-400">Single Statement Analysis</button><button class="pb-3 text-sm font-semibold border-b-2 transition flex items-center gap-1.5 border-transparent text-slate-400 hover:text-slate-200"><span>Multi-Account Consolidation</span><span class="px-1.5 py-0.5 text-[10px] rounded bg-blue-500/20 text-blue-300 font-bold">PRO</span></button><button class="pb-3 text-sm font-semibold border-b-2 transition flex items-center gap-1.5 border-transparent text-slate-400 hover:text-slate-200"><span>Developer API &amp; SDK</span><span class="px-1.5 py-0.5 text-[10px] rounded bg-emerald-500/20 text-emerald-400 font-bold">DOCS</span></button></div><section class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm"><form class="space-y-4"><h2 class="text-lg font-semibold text-white">Upload Bank / M-PESA Statement</h2><div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center"><div class="sm:col-span-2"><input type="file" accept=".pdf,image/*" class="file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 text-sm text-slate-400 w-full cursor-pointer bg-slate-800/40 rounded-lg p-1.5 border border-slate-700/60"/></div><div><input type="password" placeholder="PDF Password (if protected)" class="w-full px-4 py-2.5 rounded-lg bg-slate-800/60 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" value=""/></div></div><div><input type="url" placeholder="Optional Webhook Notification URL (e.g. https://your-app.com/api/webhooks)" class="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500" value=""/></div><div class="flex justify-end"><button type="submit" disabled="" class="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-sm transition">Analyze Statement</button></div></form></section></div></main></div></div><script type="module" src="/_swift-rust/island/pf6y8q.js"></script>
 <script type="module" src="/_swift-rust/island/1u156d2.js"></script>
 </body></html></body>
 </html>
