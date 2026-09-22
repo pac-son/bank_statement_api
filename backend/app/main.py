@@ -17,6 +17,9 @@ from .parsers.opay import OPayParser
 from .parsers.palmpay import PalmPayParser
 from .parsers.kuda import KudaParser
 from .parsers.moniepoint import MoniepointParser
+from .parsers.ghana import GhanaCBGParser
+from .parsers.kenya import KenyaEquityParser
+
 from .services.loan_stacking import analyze_loan_stacking
 from .services.narrative_summary import generate_credit_narrative
 from .services.consolidation import consolidate_statements
@@ -56,22 +59,33 @@ if tess_path:
 def classify_and_parse(extracted_text: str):
     upper_text = extracted_text.upper()
     
-    if "GUARANTY TRUST" in upper_text or "GTBANK" in upper_text:
-        return "GTBank", GTBankParser(extracted_text)
-    elif "ACCESS BANK" in upper_text:
-        return "Access Bank", AccessBankParser(extracted_text)
-    elif "UBA" in upper_text or "UNITED BANK FOR AFRICA" in upper_text:
-        return "UBA", UBAParser(extracted_text)
-    elif "OPAY" in upper_text:
-        return "OPay", OPayParser(extracted_text)
-    elif "PALMPAY" in upper_text:
-        return "PalmPay", PalmPayParser(extracted_text)
-    elif "KUDA" in upper_text:
-        return "Kuda Bank", KudaParser(extracted_text)
-    elif "MONIEPOINT" in upper_text:
-        return "Moniepoint MFB", MoniepointParser(extracted_text)
+    # 1. Multi-Country: Kenya (Equity, KCB, M-PESA, Safaricom)
+    if any(k in upper_text for k in ["EQUITY BANK", "KCB", "M-PESA", "MPESA", "SAFARICOM", "KENYA COMMERCIAL"]):
+        return "Equity Bank / Kenya M-PESA", KenyaEquityParser(extracted_text), "KES"
         
-    return "Unknown Bank / Generic", GTBankParser(extracted_text)
+    # 2. Multi-Country: Ghana (Consolidated Bank Ghana, GCB, Ecobank Ghana, Fidelity Ghana)
+    elif any(g in upper_text for g in ["GHANA", "CBG", "CONSOLIDATED BANK", "GCB BANK", "CALBANK", "GHS"]):
+        return "Consolidated Bank Ghana (CBG)", GhanaCBGParser(extracted_text), "GHS"
+
+    # 3. Nigeria: Traditional Commercial Banks
+    elif "GUARANTY TRUST" in upper_text or "GTBANK" in upper_text:
+        return "GTBank", GTBankParser(extracted_text), "NGN"
+    elif "ACCESS BANK" in upper_text:
+        return "Access Bank", AccessBankParser(extracted_text), "NGN"
+    elif "UBA" in upper_text or "UNITED BANK FOR AFRICA" in upper_text:
+        return "UBA", UBAParser(extracted_text), "NGN"
+        
+    # 4. Nigeria: Neobanks & Digital Wallets
+    elif "OPAY" in upper_text:
+        return "OPay", OPayParser(extracted_text), "NGN"
+    elif "PALMPAY" in upper_text:
+        return "PalmPay", PalmPayParser(extracted_text), "NGN"
+    elif "KUDA" in upper_text:
+        return "Kuda Bank", KudaParser(extracted_text), "NGN"
+    elif "MONIEPOINT" in upper_text:
+        return "Moniepoint MFB", MoniepointParser(extracted_text), "NGN"
+        
+    return "Unknown Bank / Generic", GTBankParser(extracted_text), "NGN"
 
 def parse_single_file_sync(file_path: str, filename: str, password: Optional[str] = None) -> Dict[str, Any]:
     is_pdf = filename.lower().endswith(".pdf")
@@ -108,8 +122,12 @@ def parse_single_file_sync(file_path: str, filename: str, password: Optional[str
         except Exception as ocr_err:
             print(f"Image OCR error: {ocr_err}")
 
-    bank_name, parser = classify_and_parse(extracted_text)
+    bank_name, parser, currency = classify_and_parse(extracted_text)
     transactions = parser.extract_transactions() if parser else []
+
+    # Tag currency to transactions
+    for t in transactions:
+        t["currency"] = currency
 
     total_income = sum(t.get("credit", 0.0) for t in transactions)
     total_expenses = sum(t.get("debit", 0.0) for t in transactions)
@@ -117,6 +135,7 @@ def parse_single_file_sync(file_path: str, filename: str, password: Optional[str
     avg_balance = (sum(balances) / len(balances)) if balances else 0.0
 
     summary = {
+        "currency": currency,
         "total_income": round(total_income, 2),
         "total_expenses": round(total_expenses, 2),
         "net_cashflow": round(total_income - total_expenses, 2),
@@ -124,18 +143,14 @@ def parse_single_file_sync(file_path: str, filename: str, password: Optional[str
         "transaction_count": len(transactions)
     }
 
-    # 1. Run Loan-Stacking Analysis
     loan_stacking = analyze_loan_stacking(transactions, total_income)
-
-    # 2. Run Document Tampering & Fraud Detection
     fraud_evaluation = evaluate_fraud_risk(file_path, transactions)
-
-    # 3. Run Plain-English Narrative Summary
     credit_narrative = generate_credit_narrative(bank_name, summary, loan_stacking, transactions)
 
     return {
         "status": "completed",
         "bank": bank_name,
+        "currency": currency,
         "filename": filename,
         "summary": summary,
         "loan_stacking": loan_stacking,
@@ -192,8 +207,6 @@ def process_multi_files_background(
                 })
 
         consolidated_data = consolidate_statements(account_results)
-        
-        # Determine aggregate fraud across all merged files
         max_fraud_score = max([f.get("fraud_score", 0) for f in overall_fraud_list], default=0)
         consolidated_fraud = {
             "max_fraud_score": max_fraud_score,
@@ -219,7 +232,7 @@ def process_multi_files_background(
 
 @app.get("/")
 def read_root():
-    return {"message": "Bank Statement Extraction & Credit Scoring API (Local Mode)"}
+    return {"message": "Bank Statement Extraction & Credit Scoring API (Multi-Country: Nigeria, Ghana, Kenya)"}
 
 @app.post("/statements/upload")
 async def upload_statement(
