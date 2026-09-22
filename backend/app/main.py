@@ -18,6 +18,7 @@ from .parsers.palmpay import PalmPayParser
 from .parsers.kuda import KudaParser
 from .parsers.moniepoint import MoniepointParser
 from .services.loan_stacking import analyze_loan_stacking
+from .services.narrative_summary import generate_credit_narrative
 
 app = FastAPI(title="Bank Statement Extraction & Credit Scoring API")
 
@@ -115,7 +116,7 @@ def process_file_background(job_id: str, file_path: str, filename: str, password
             except Exception as ocr_err:
                 print(f"Image OCR error: {ocr_err}")
 
-        # Bank Classification (Traditional + Neobanks)
+        # Bank Classification
         bank_name, parser = classify_and_parse(extracted_text)
 
         transactions = parser.extract_transactions() if parser else []
@@ -133,8 +134,11 @@ def process_file_background(job_id: str, file_path: str, filename: str, password
             "transaction_count": len(transactions)
         }
 
-        # Run Loan-Stacking & Risk Detection Engine
+        # 1. Run Loan-Stacking Risk Detection Engine
         loan_stacking = analyze_loan_stacking(transactions, total_income)
+
+        # 2. Run Narrative Summary & Credit Assessment Engine
+        credit_narrative = generate_credit_narrative(bank_name, summary, loan_stacking, transactions)
 
         jobs_db[job_id] = {
             "status": "completed",
@@ -142,6 +146,7 @@ def process_file_background(job_id: str, file_path: str, filename: str, password
             "filename": filename,
             "summary": summary,
             "loan_stacking": loan_stacking,
+            "credit_narrative": credit_narrative,
             "transactions": transactions,
             "raw_text_preview": extracted_text[:500] if extracted_text else ""
         }

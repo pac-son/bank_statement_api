@@ -37,6 +37,20 @@ interface LoanStacking {
   flagged_transactions: FlaggedTx[];
 }
 
+interface CreditNarrative {
+  recommendation: string;
+  recommendation_badge: string;
+  recommendation_reason: string;
+  executive_summary: string;
+  income_profile: string;
+  liquidity_status: string;
+  burn_rate_percentage: number;
+  gambling_detected: boolean;
+  gambling_total_spend: number;
+  recommended_max_loan_capacity: number;
+  recommended_monthly_installment_cap: number;
+}
+
 interface Transaction {
   date: string;
   description: string;
@@ -51,6 +65,7 @@ interface StatementResult {
   filename?: string;
   summary?: Summary;
   loan_stacking?: LoanStacking;
+  credit_narrative?: CreditNarrative;
   transactions?: Transaction[];
   error?: string;
 }
@@ -143,10 +158,10 @@ export default function Home() {
               Bank Statement & Credit Scoring Engine
             </h1>
             <p className="text-slate-400 text-sm mt-1">
-              Supports GTBank, Access Bank, UBA + Digital Loan-Stacking Detection Engine.
+              Automated Statement Parsing, Loan-Stacking Detection & AI Credit Assessment Memo.
             </p>
           </div>
-          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
             API Online
           </span>
         </header>
@@ -181,7 +196,7 @@ export default function Home() {
                 disabled={!file || loading}
                 className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-sm transition"
               >
-                {loading ? "Extracting & Analyzing..." : "Analyze Statement"}
+                {loading ? "Extracting & Generating Memo..." : "Analyze Statement"}
               </button>
             </div>
           </form>
@@ -197,7 +212,7 @@ export default function Home() {
         {loading && (
           <div className="flex items-center justify-center p-12 bg-slate-900/50 rounded-xl border border-slate-800 animate-pulse">
             <p className="text-slate-300 font-medium">
-              Running extraction, OCR fallback & loan-stacking risk engine...
+              Extracting transactions, assessing risk flags & compiling credit memo...
             </p>
           </div>
         )}
@@ -205,6 +220,68 @@ export default function Home() {
         {/* Extraction Results */}
         {result && result.status === "completed" && (
           <div className="space-y-6">
+            {/* Executive Credit Memo Card */}
+            {result.credit_narrative && (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                  <div>
+                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">
+                      Credit Decision & Underwriting Memo
+                    </span>
+                    <h2 className="text-xl font-bold text-white mt-0.5">
+                      Executive Narrative Summary
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg border uppercase tracking-wider ${result.credit_narrative.recommendation_badge}`}
+                    >
+                      {result.credit_narrative.recommendation}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Plain-English Synthesis Paragraph */}
+                <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 text-sm leading-relaxed text-slate-200">
+                  <p>{result.credit_narrative.executive_summary}</p>
+                </div>
+
+                {/* Key Underwriting Indicators */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                  <div className="bg-slate-800/40 p-3.5 rounded-lg border border-slate-700/50">
+                    <span className="text-xs text-slate-400">Income Stream Profile</span>
+                    <p className="text-sm font-bold text-white mt-1">
+                      {result.credit_narrative.income_profile}
+                    </p>
+                  </div>
+                  <div className="bg-slate-800/40 p-3.5 rounded-lg border border-slate-700/50">
+                    <span className="text-xs text-slate-400">Expense Burn Rate</span>
+                    <p className="text-sm font-bold text-slate-200 mt-1">
+                      {result.credit_narrative.burn_rate_percentage}% of inflows
+                    </p>
+                  </div>
+                  <div className="bg-slate-800/40 p-3.5 rounded-lg border border-slate-700/50">
+                    <span className="text-xs text-slate-400">Recommended Max Loan Ticket</span>
+                    <p className="text-sm font-bold text-emerald-400 mt-1">
+                      ₦{result.credit_narrative.recommended_max_loan_capacity.toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="bg-slate-800/40 p-3.5 rounded-lg border border-slate-700/50">
+                    <span className="text-xs text-slate-400">Safe Monthly Installment Cap</span>
+                    <p className="text-sm font-bold text-sky-400 mt-1">
+                      ₦{result.credit_narrative.recommended_monthly_installment_cap.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Decision Rationale */}
+                <div className="p-3.5 rounded-lg bg-blue-950/20 border border-blue-900/40 text-xs text-blue-200 flex items-start gap-2">
+                  <span className="font-bold shrink-0">Rationale:</span>
+                  <span>{result.credit_narrative.recommendation_reason}</span>
+                </div>
+              </div>
+            )}
+
             {/* Financial Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
