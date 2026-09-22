@@ -139,8 +139,15 @@ interface StatementResult {
   error?: string;
 }
 
-const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-const API_BASE = rawApi.startsWith("http") ? rawApi : `https://${rawApi}`;
+const rawApi = process.env.NEXT_PUBLIC_API_URL || "";
+const getApiBase = () => {
+  if (rawApi) return rawApi.startsWith("http") ? rawApi : `https://${rawApi}`;
+  if (typeof window !== "undefined" && window.location.port === "3210") {
+    return "http://127.0.0.1:8000";
+  }
+  return "";
+};
+const API_BASE = getApiBase();
 
 export default function Home() {
   const [mode, setMode] = useState<"single" | "consolidate">("single");

@@ -1,5 +1,5 @@
 services:
-  # Credova Backend API with Tesseract OCR (Free Web Service)
+  # Credova All-in-One Engine (FastAPI + Embedded Underwriting Dashboard + Tesseract OCR)
   - type: web
     name: credova-api
     env: docker
@@ -11,20 +11,3 @@ services:
       - key: PORT
         value: 8000
     healthCheckPath: /docs
-
-  # Credova Frontend Web Dashboard (Free Static Site on Edge CDN)
-  - type: static
-    name: credova-dashboard
-    rootDir: frontend
-    buildCommand: curl -fsSL https://bun.sh/install | bash && ~/.bun/bin/bun install && ~/.bun/bin/bun run build
-    staticPublishPath: .vercel/output/static
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        fromService:
-          type: web
-          name: credova-api
-          property: host
