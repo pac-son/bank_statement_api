@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import uuid
 from typing import Dict, Any, List, Optional
@@ -68,21 +69,21 @@ def classify_and_parse(extracted_text: str):
         return "Consolidated Bank Ghana (CBG)", GhanaCBGParser(extracted_text), "GHS"
 
     # 3. Nigeria: Traditional Commercial Banks
-    elif "GUARANTY TRUST" in upper_text or "GTBANK" in upper_text:
+    elif "GUARANTY TRUST" in upper_text or bool(re.search(r"\bGTBANK\b", upper_text)):
         return "GTBank", GTBankParser(extracted_text), "NGN"
     elif "ACCESS BANK" in upper_text:
         return "Access Bank", AccessBankParser(extracted_text), "NGN"
-    elif "UBA" in upper_text or "UNITED BANK FOR AFRICA" in upper_text:
+    elif "UNITED BANK FOR AFRICA" in upper_text or "AFRICA'S GLOBAL BANK" in upper_text or bool(re.search(r"\bUBA\b", upper_text)):
         return "UBA", UBAParser(extracted_text), "NGN"
         
     # 4. Nigeria: Neobanks & Digital Wallets
-    elif "OPAY" in upper_text:
+    elif bool(re.search(r"\bOPAY\b", upper_text)):
         return "OPay", OPayParser(extracted_text), "NGN"
-    elif "PALMPAY" in upper_text:
+    elif bool(re.search(r"\bPALMPAY\b", upper_text)):
         return "PalmPay", PalmPayParser(extracted_text), "NGN"
-    elif "KUDA" in upper_text:
+    elif bool(re.search(r"\bKUDA\b", upper_text)):
         return "Kuda Bank", KudaParser(extracted_text), "NGN"
-    elif "MONIEPOINT" in upper_text:
+    elif bool(re.search(r"\bMONIEPOINT\b", upper_text)):
         return "Moniepoint MFB", MoniepointParser(extracted_text), "NGN"
         
     return "Unknown Bank / Generic", GTBankParser(extracted_text), "NGN"
