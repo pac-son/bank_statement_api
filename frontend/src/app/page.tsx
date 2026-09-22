@@ -139,6 +139,8 @@ interface StatementResult {
   error?: string;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
 export default function Home() {
   const [mode, setMode] = useState<"single" | "consolidate">("single");
   const [countryFilter, setCountryFilter] = useState<"ALL" | "NG" | "GH" | "KE">("ALL");
@@ -169,7 +171,7 @@ export default function Home() {
     if (singleWebhook) formData.append("webhook_url", singleWebhook);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/statements/upload", {
+      const res = await fetch(`${API_BASE}/statements/upload`, {
         method: "POST",
         body: formData,
       });
@@ -203,7 +205,7 @@ export default function Home() {
     if (multiWebhook) formData.append("webhook_url", multiWebhook);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/statements/consolidate", {
+      const res = await fetch(`${API_BASE}/statements/consolidate`, {
         method: "POST",
         body: formData,
       });
@@ -225,7 +227,7 @@ export default function Home() {
   const pollStatus = (id: string) => {
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:8000/statements/${id}`);
+        const res = await fetch(`${API_BASE}/statements/${id}`);
         const data: StatementResult = await res.json();
 
         if (data.status === "completed") {

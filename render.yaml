@@ -1,0 +1,29 @@
+services:
+  # Backend API with Tesseract OCR (built via Dockerfile)
+  - type: web
+    name: bank-statement-api
+    env: docker
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    plan: standard
+    region: frankfurt
+    envVars:
+      - key: PORT
+        value: 8000
+    healthCheckPath: /docs
+
+  # Frontend Web Dashboard (Swift Rust / React)
+  - type: web
+    name: bank-statement-dashboard
+    env: node
+    rootDir: frontend
+    buildCommand: bun install && bun run build
+    startCommand: bun run start
+    plan: starter
+    region: frankfurt
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: bank-statement-api
+          property: host
