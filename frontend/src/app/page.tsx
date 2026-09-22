@@ -482,7 +482,7 @@ export default function Home() {
                   <span
                     className={`px-3 py-1.5 text-xs font-bold rounded-lg border uppercase tracking-wider self-start sm:self-auto ${result.fraud_evaluation.badge}`}
                   >
-                    {result.fraud_evaluation.overall_status} (Score: {result.fraud_evaluation.fraud_score}/100)
+                    {result.fraud_evaluation.overall_status} • {100 - result.fraud_evaluation.fraud_score}% Authenticity (Tamper Risk: {result.fraud_evaluation.fraud_score}/100)
                   </span>
                 </div>
 
