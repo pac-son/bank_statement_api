@@ -1,0 +1,27 @@
+{
+  "extends": "swift-rust/tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "jsx": "preserve",
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*",
+    "globals.d.ts",
+    ".swift-rust/types/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".swift-rust",
+    ".turbo"
+  ]
+}
