@@ -109,10 +109,10 @@ def parse_single_file_sync(file_path: str, filename: str, password: Optional[str
                 except Exception as ocr_err:
                     print(f"OCR error: {ocr_err}")
         except Exception as pdf_err:
-            err_msg = str(pdf_err)
-            if "password" in err_msg.lower() or "pdfpassword" in str(type(pdf_err)).lower():
+            err_str = f"{repr(pdf_err)} {str(pdf_err)} {getattr(pdf_err, 'args', '')}".lower()
+            if "password" in err_str:
                 return {
-                    "error": f"File '{filename}' is password-protected. Please provide the password."
+                    "error": f"File '{filename}' is password-protected. Please enter your PDF statement password in the password field to unlock it."
                 }
             raise pdf_err
     else:
