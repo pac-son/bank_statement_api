@@ -5,6 +5,7 @@ import uuid
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import pdfplumber
@@ -43,6 +44,7 @@ app.add_middleware(
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 
 jobs_db: Dict[str, Dict[str, Any]] = {}
 
@@ -237,7 +239,15 @@ def process_multi_files_background(
 
 @app.get("/")
 def read_root():
-    return {"message": "Bank Statement Extraction & Credit Scoring API (Multi-Country: Nigeria, Ghana, Kenya)"}
+    index_file = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return {
+        "service": "Credova Underwriting Engine",
+        "status": "online",
+        "documentation": "/docs",
+        "supported_countries": ["Nigeria (NGN)", "Ghana (GHS)", "Kenya (KES)"]
+    }
 
 @app.post("/statements/upload")
 async def upload_statement(
