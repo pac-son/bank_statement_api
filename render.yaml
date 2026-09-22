@@ -5,7 +5,7 @@ services:
     env: docker
     dockerContext: ./backend
     dockerfilePath: ./backend/Dockerfile
-    plan: standard
+    plan: free
     region: frankfurt
     envVars:
       - key: PORT
@@ -19,7 +19,7 @@ services:
     rootDir: frontend
     buildCommand: bun install && bun run build
     startCommand: bun run start
-    plan: starter
+    plan: free
     region: frankfurt
     envVars:
       - key: NEXT_PUBLIC_API_URL
