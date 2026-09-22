@@ -9,9 +9,9 @@ const fontSansClass = geist.className;
 const fontMonoClass = geistMono.className;
 
 export const metadata = {
-  title: "Bank Statement & Credit Scoring Engine",
+  title: "Credova — Pan-African Statement Intelligence & Underwriting Engine",
   description:
-    "Pan-African Automated Bank Statement Parsing, Fraud Detection, Loan-Stacking Risk Analysis, and Financial Underwriting.",
+    "Credova: Automated Bank Statement Parsing, Fraud Detection, Loan-Stacking Risk Analysis, and Financial Underwriting for Nigeria, Ghana, and Kenya.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

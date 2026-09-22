@@ -281,22 +281,28 @@ export default function Home() {
       <div className="max-w-5xl mx-auto space-y-8">
         <header className="border-b border-slate-800 pb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xl">🌍</span>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 text-white font-black text-sm shadow-md shadow-blue-500/20">
+                C
+              </span>
               <span className="text-xs font-bold uppercase tracking-wider text-blue-400">
-                Pan-African Banking Infrastructure
+                Pan-African Statement Intelligence
               </span>
             </div>
-            <h1 className="text-3xl font-bold tracking-tight text-white">
-              Bank Statement & Credit Scoring Engine
+            <h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
+              Credova
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider">
+                Underwriting Engine
+              </span>
             </h1>
             <p className="text-slate-400 text-sm mt-1">
-              Automated Statement Parsing for Nigeria 🇳🇬, Ghana 🇬🇭, and Kenya 🇰🇪.
+              Automated Statement Parsing, Fraud Forensics & Risk Analytics for Nigeria 🇳🇬, Ghana 🇬🇭, and Kenya 🇰🇪.
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto">
-              Pan-African API Online
+            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Credova Core Online
             </span>
           </div>
         </header>

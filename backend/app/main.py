@@ -27,7 +27,11 @@ from .services.consolidation import consolidate_statements
 from .services.fraud_detector import evaluate_fraud_risk
 from .services.webhook import dispatch_webhook_notification
 
-app = FastAPI(title="Bank Statement Extraction & Credit Scoring API")
+app = FastAPI(
+    title="Credova — Pan-African Statement Intelligence & Underwriting API",
+    version="1.0.0",
+    description="Automated Statement Parsing, Fraud Forensics, Loan-Stacking Detection, and Credit Decisioning for Nigeria, Ghana, and Kenya."
+)
 
 app.add_middleware(
     CORSMiddleware,

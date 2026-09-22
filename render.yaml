@@ -1,7 +1,7 @@
 services:
-  # Backend API with Tesseract OCR (built via Dockerfile)
+  # Credova Backend API with Tesseract OCR (built via Dockerfile)
   - type: web
-    name: bank-statement-api
+    name: credova-api
     env: docker
     dockerContext: ./backend
     dockerfilePath: ./backend/Dockerfile
@@ -12,9 +12,9 @@ services:
         value: 8000
     healthCheckPath: /docs
 
-  # Frontend Web Dashboard (Swift Rust / React)
+  # Credova Frontend Web Dashboard (Swift Rust / React)
   - type: web
-    name: bank-statement-dashboard
+    name: credova-dashboard
     env: node
     rootDir: frontend
     buildCommand: bun install && bun run build
@@ -25,5 +25,5 @@ services:
       - key: NEXT_PUBLIC_API_URL
         fromService:
           type: web
-          name: bank-statement-api
+          name: credova-api
           property: host

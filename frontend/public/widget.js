@@ -63,7 +63,7 @@
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
           <div>
             <h3 style="margin:0; font-size:18px; font-weight:700;">Upload Bank Statement</h3>
-            <p style="margin:4px 0 0 0; font-size:12px; color:#94a3b8;">Powered by Secure Statement Engine for ${this.lenderName}</p>
+            <p style="margin:4px 0 0 0; font-size:12px; color:#94a3b8;">Powered by Credova for ${this.lenderName}</p>
           </div>
           <button id="bsw-close-btn" style="background:none; border:none; color:#94a3b8; font-size:22px; cursor:pointer; padding:4px;">&times;</button>
         </div>
@@ -73,7 +73,7 @@
           <div id="bsw-file-label">
             <span style="font-size:28px;">📄</span>
             <p style="margin:8px 0 0 0; font-size:14px; font-weight:600;">Click or drag PDF statement here</p>
-            <p style="margin:4px 0 0 0; font-size:11px; color:#94a3b8;">Supports GTBank, Access, UBA, OPay, PalmPay, Kuda</p>
+            <p style="margin:4px 0 0 0; font-size:11px; color:#94a3b8;">Supports Nigeria 🇳🇬, Ghana 🇬🇭 & Kenya 🇰🇪 (M-PESA)</p>
           </div>
         </div>
 
