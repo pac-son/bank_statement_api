@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 declare const process: any;
 
@@ -163,7 +163,7 @@ const getApiBase = () => {
 const API_BASE = getApiBase();
 
 export default function Home() {
-  const [mode, setMode] = useState<"single" | "consolidate" | "api_docs">("single");
+  const [mode, setMode] = useState<"single" | "consolidate" | "api_docs" | "pricing">("single");
   const [codeLang, setCodeLang] = useState<"curl" | "python" | "node">("curl");
   const [countryFilter, setCountryFilter] = useState<"ALL" | "NG" | "GH" | "KE">("ALL");
   const [singleFile, setSingleFile] = useState<File | null>(null);
@@ -173,6 +173,99 @@ export default function Home() {
   const [multiFiles, setMultiFiles] = useState<FileList | null>(null);
   const [multiPasswords, setMultiPasswords] = useState("");
   const [multiWebhook, setMultiWebhook] = useState("");
+
+  // API Key & Wallet State
+  const [userApiKey, setUserApiKey] = useState("");
+  const [keyOrgName, setKeyOrgName] = useState("");
+  const [creditsRemaining, setCreditsRemaining] = useState<number | null>(null);
+  const [creatingKey, setCreatingKey] = useState(false);
+  const [keyCreatedMsg, setKeyCreatedMsg] = useState<string | null>(null);
+  const [topupLoading, setTopupLoading] = useState(false);
+  const [topupMsg, setTopupMsg] = useState<string | null>(null);
+  const [topupErr, setTopupErr] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedKey = localStorage.getItem("credova_api_key");
+      const savedName = localStorage.getItem("credova_org_name");
+      if (savedKey) {
+        setUserApiKey(savedKey);
+        if (savedName) setKeyOrgName(savedName);
+        fetch(`${API_BASE}/api/keys/${savedKey}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (data && typeof data.credits_balance === "number") {
+              setCreditsRemaining(data.credits_balance);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, []);
+
+  const handleCreateKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!keyOrgName.trim()) return;
+    setCreatingKey(true);
+    setKeyCreatedMsg(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/keys`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: keyOrgName.trim(), tier: "payg" })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to create API key");
+      }
+      const data = await res.json();
+      setUserApiKey(data.api_key);
+      setCreditsRemaining(data.credits_balance);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("credova_api_key", data.api_key);
+        localStorage.setItem("credova_org_name", data.name);
+      }
+      setKeyCreatedMsg("✓ API Key successfully generated with 25 free credits (~₦8,750 value)!");
+    } catch (err: any) {
+      alert(err.message || "Failed to generate key");
+    } finally {
+      setCreatingKey(false);
+    }
+  };
+
+  const handleQuickTopup = async (credits: number, amount: number) => {
+    if (!userApiKey) {
+      alert("Please generate or enter an API key first.");
+      return;
+    }
+    setTopupLoading(true);
+    setTopupMsg(null);
+    setTopupErr(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/topup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: userApiKey,
+          credits,
+          amount,
+          currency: "NGN"
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Top-up failed");
+      }
+      const data = await res.json();
+      setCreditsRemaining(data.new_balance);
+      setTopupMsg(`✓ Successfully added +${credits} credits! New balance: ${data.new_balance} credits.`);
+    } catch (err: any) {
+      setTopupErr(err.message || "Top-up failed");
+    } finally {
+      setTopupLoading(false);
+    }
+  };
 
   const [loading, setLoading] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -220,6 +313,7 @@ export default function Home() {
     formData.append("file", singleFile);
     if (singlePassword) formData.append("password", singlePassword);
     if (singleWebhook) formData.append("webhook_url", singleWebhook);
+    if (userApiKey) formData.append("api_key", userApiKey);
 
     try {
       const res = await fetch(`${API_BASE}/statements/upload`, {
@@ -227,8 +321,14 @@ export default function Home() {
         body: formData,
       });
 
-      if (!res.ok) throw new Error("Failed to upload statement.");
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || "Failed to upload statement.");
+      }
       const data = await res.json();
+      if (typeof data.credits_remaining === "number") {
+        setCreditsRemaining(data.credits_remaining);
+      }
       setJobId(data.job_id);
       pollStatus(data.job_id);
     } catch (err: any) {
@@ -255,6 +355,7 @@ export default function Home() {
     }
     if (multiPasswords) formData.append("passwords", multiPasswords);
     if (multiWebhook) formData.append("webhook_url", multiWebhook);
+    if (userApiKey) formData.append("api_key", userApiKey);
 
     try {
       const res = await fetch(`${API_BASE}/statements/consolidate`, {
@@ -268,6 +369,9 @@ export default function Home() {
       }
 
       const data = await res.json();
+      if (typeof data.credits_remaining === "number") {
+        setCreditsRemaining(data.credits_remaining);
+      }
       setJobId(data.job_id);
       pollStatus(data.job_id);
     } catch (err: any) {
@@ -351,7 +455,17 @@ export default function Home() {
               Automated Statement Parsing, Fraud Forensics & Risk Analytics for Nigeria 🇳🇬, Ghana 🇬🇭, and Kenya 🇰🇪.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {userApiKey && (
+              <button
+                type="button"
+                onClick={() => setMode("pricing")}
+                className="px-3 py-1 text-xs font-semibold rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                <span>Wallet: <strong>{creditsRemaining !== null ? creditsRemaining : 25}</strong> Credits</span>
+              </button>
+            )}
             <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
               Credova Core Online
@@ -385,11 +499,11 @@ export default function Home() {
         </div>
 
         {/* Mode Selector Tabs */}
-        <div className="flex border-b border-slate-800 gap-4">
+        <div className="flex border-b border-slate-800 gap-4 overflow-x-auto">
           <button
             type="button"
             onClick={() => setMode("single")}
-            className={`pb-3 text-sm font-semibold border-b-2 cursor-pointer transition ${
+            className={`pb-3 text-sm font-semibold border-b-2 cursor-pointer transition whitespace-nowrap ${
               mode === "single"
                 ? "border-blue-500 text-blue-400"
                 : "border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700"
@@ -400,7 +514,7 @@ export default function Home() {
           <button
             type="button"
             onClick={() => setMode("consolidate")}
-            className={`pb-3 text-sm font-semibold border-b-2 cursor-pointer transition flex items-center gap-1.5 ${
+            className={`pb-3 text-sm font-semibold border-b-2 cursor-pointer transition flex items-center gap-1.5 whitespace-nowrap ${
               mode === "consolidate"
                 ? "border-blue-500 text-blue-400"
                 : "border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700"
@@ -414,7 +528,7 @@ export default function Home() {
           <button
             type="button"
             onClick={() => setMode("api_docs")}
-            className={`pb-3 text-sm font-semibold border-b-2 cursor-pointer transition flex items-center gap-1.5 ${
+            className={`pb-3 text-sm font-semibold border-b-2 cursor-pointer transition flex items-center gap-1.5 whitespace-nowrap ${
               mode === "api_docs"
                 ? "border-blue-500 text-blue-400"
                 : "border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700"
@@ -425,13 +539,32 @@ export default function Home() {
               DOCS
             </span>
           </button>
+          <button
+            type="button"
+            onClick={() => setMode("pricing")}
+            className={`pb-3 text-sm font-semibold border-b-2 cursor-pointer transition flex items-center gap-1.5 whitespace-nowrap ${
+              mode === "pricing"
+                ? "border-amber-500 text-amber-400"
+                : "border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700"
+            }`}
+          >
+            <span>Pricing & API Keys</span>
+            <span className="px-1.5 py-0.5 text-[10px] rounded bg-amber-500/20 text-amber-300 font-bold">
+              PLANS
+            </span>
+          </button>
         </div>
 
-        {/* Upload Form */}
+        {/* Upload Form / Content Section */}
         <section className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
           {mode === "single" ? (
             <form onSubmit={handleUploadSingle} className="space-y-4">
-              <h2 className="text-lg font-semibold text-white">Upload Bank / M-PESA Statement</h2>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold text-white">Upload Bank / M-PESA Statement</h2>
+                <span className="text-xs text-slate-400">
+                  Cost: <strong className="text-amber-400">1 Credit</strong> (₦350 / ~$0.25)
+                </span>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
                 <div className="sm:col-span-2">
                   <input
@@ -451,14 +584,25 @@ export default function Home() {
                   />
                 </div>
               </div>
-              <div>
-                <input
-                  type="url"
-                  placeholder="Optional Webhook Notification URL (e.g. https://your-app.com/api/webhooks)"
-                  value={singleWebhook}
-                  onChange={(e) => setSingleWebhook(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <input
+                    type="url"
+                    placeholder="Optional Webhook Notification URL (e.g. https://your-app.com/api/webhooks)"
+                    value={singleWebhook}
+                    onChange={(e) => setSingleWebhook(e.target.value)}
+                    className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <input
+                    type="text"
+                    placeholder="API Key (optional, defaults to Sandbox)"
+                    value={userApiKey}
+                    onChange={(e) => setUserApiKey(e.target.value)}
+                    className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
               </div>
               <div className="flex justify-end">
                 <button
@@ -472,13 +616,18 @@ export default function Home() {
             </form>
           ) : mode === "consolidate" ? (
             <form onSubmit={handleUploadConsolidate} className="space-y-4">
-              <div>
-                <h2 className="text-lg font-semibold text-white">
-                  Consolidate Multiple Statements (Merge Accounts)
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Supports multi-statement merging across commercial banks, digital wallets, or regional accounts.
-                </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">
+                    Consolidate Multiple Statements (Merge Accounts)
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Supports multi-statement merging across commercial banks, digital wallets, or regional accounts.
+                  </p>
+                </div>
+                <span className="text-xs text-slate-400 self-start sm:self-auto">
+                  Cost: <strong className="text-indigo-400">2 Credits</strong> (₦700 / ~$0.50)
+                </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
                 <div className="sm:col-span-2">
@@ -500,14 +649,25 @@ export default function Home() {
                   />
                 </div>
               </div>
-              <div>
-                <input
-                  type="url"
-                  placeholder="Optional Webhook Notification URL (e.g. https://your-app.com/api/webhooks)"
-                  value={multiWebhook}
-                  onChange={(e) => setMultiWebhook(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <input
+                    type="url"
+                    placeholder="Optional Webhook Notification URL (e.g. https://your-app.com/api/webhooks)"
+                    value={multiWebhook}
+                    onChange={(e) => setMultiWebhook(e.target.value)}
+                    className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <input
+                    type="text"
+                    placeholder="API Key (optional, defaults to Sandbox)"
+                    value={userApiKey}
+                    onChange={(e) => setUserApiKey(e.target.value)}
+                    className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                </div>
               </div>
               <div className="flex justify-end">
                 <button
@@ -519,7 +679,7 @@ export default function Home() {
                 </button>
               </div>
             </form>
-          ) : (
+          ) : mode === "api_docs" ? (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
@@ -608,31 +768,35 @@ export default function Home() {
 
                 <div className="relative bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs overflow-x-auto text-slate-300">
                   {codeLang === "curl" && (
-                    <pre>{`# 1. Upload statement for async processing
+                    <pre>{`# 1. Upload statement for async processing (1 Credit charged)
 curl -X POST "${API_BASE || 'https://credova-api.onrender.com'}/statements/upload" \\
+  -H "X-API-Key: ${userApiKey || 'cdv_live_your_api_key_here'}" \\
   -F "file=@bank_statement.pdf" \\
   -F "password=optional_pdf_password" \\
   -F "webhook_url=https://your-lending-app.com/api/webhooks"
 
 # Response returns Job ID immediately:
-# { "job_id": "786cc1a4-9941-438d-9379-0740fcef10d4", "status": "pending" }
+# { "job_id": "786cc1a4-9941-438d-9379-0740fcef10d4", "status": "pending", "credits_remaining": 24 }
 
 # 2. Retrieve decision & underwriting metrics:
-curl "${API_BASE || 'https://credova-api.onrender.com'}/statements/786cc1a4-9941-438d-9379-0740fcef10d4"`}</pre>
+curl -H "X-API-Key: ${userApiKey || 'cdv_live_your_api_key_here'}" \\
+  "${API_BASE || 'https://credova-api.onrender.com'}/statements/786cc1a4-9941-438d-9379-0740fcef10d4"`}</pre>
                   )}
                   {codeLang === "python" && (
                     <pre>{`import requests
 
 url = "${API_BASE || 'https://credova-api.onrender.com'}/statements/upload"
+headers = {"X-API-Key": "${userApiKey || 'cdv_live_your_api_key_here'}"}
 files = {"file": open("customer_statement.pdf", "rb")}
 data = {
     "password": "customer_password_if_any",
     "webhook_url": "https://your-lending-app.com/api/webhooks"
 }
 
-response = requests.post(url, files=files, data=data)
+response = requests.post(url, headers=headers, files=files, data=data)
 job = response.json()
-print("Job ID:", job["job_id"])`}</pre>
+print("Job ID:", job.get("job_id"))
+print("Credits remaining:", job.get("credits_remaining"))`}</pre>
                   )}
                   {codeLang === "node" && (
                     <pre>{`import FormData from "form-data";
@@ -647,10 +811,16 @@ form.append("webhook_url", "https://your-lending-app.com/api/webhooks");
 const res = await axios.post(
   "${API_BASE || 'https://credova-api.onrender.com'}/statements/upload",
   form,
-  { headers: form.getHeaders() }
+  {
+    headers: {
+      ...form.getHeaders(),
+      "X-API-Key": "${userApiKey || 'cdv_live_your_api_key_here'}"
+    }
+  }
 );
 
-console.log("Job ID:", res.data.job_id);`}</pre>
+console.log("Job ID:", res.data.job_id);
+console.log("Credits remaining:", res.data.credits_remaining);`}</pre>
                   )}
                 </div>
               </div>
@@ -681,6 +851,7 @@ console.log("Job ID:", res.data.job_id);`}</pre>
 <script>
   const widget = new CredovaWidget({
     apiUrl: "${API_BASE || 'https://credova-api.onrender.com'}",
+    apiKey: "${userApiKey || 'cdv_live_your_api_key'}",
     lenderName: "Your Brand",
     onSuccess: function (data) {
       console.log("Decision:", data.credit_narrative.recommendation);
@@ -690,6 +861,375 @@ console.log("Job ID:", res.data.job_id);`}</pre>
   // Open modal on user click
   document.getElementById("upload-btn").onclick = () => widget.open();
 </script>`}</pre>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Mode === "pricing" */
+            <div className="space-y-8">
+              {/* Header */}
+              <div className="border-b border-slate-800 pb-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">💳</span>
+                      <h2 className="text-lg font-bold text-white">
+                        Credova Pricing, Credit Metering & API Keys
+                      </h2>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 max-w-2xl">
+                      Ultra-affordable, transparent pricing for fintech lenders and underwriting teams. Pay only for statements processed. Every new key receives <strong>25 free credits</strong> (~₦8,750 value).
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 text-xs font-semibold rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                      1 Credit = ₦350 (~$0.25)
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* API Key & Wallet Balance Card */}
+              <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-5 shadow-inner">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Left: Key Manager */}
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>🔑</span> API Key Management
+                    </h3>
+                    {!userApiKey ? (
+                      <form onSubmit={handleCreateKey} className="space-y-3">
+                        <p className="text-xs text-slate-400">
+                          Create an API key to access automated statement analysis, programmatic webhooks, and multi-account consolidation.
+                        </p>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Fintech Name or App (e.g. Acme Microfinance)"
+                            value={keyOrgName}
+                            onChange={(e) => setKeyOrgName(e.target.value)}
+                            required
+                            className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                          />
+                          <button
+                            type="submit"
+                            disabled={creatingKey}
+                            className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs transition whitespace-nowrap"
+                          >
+                            {creatingKey ? "Creating..." : "Generate Key (+25 Free)"}
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-400">
+                            Active Key for: <strong className="text-white">{keyOrgName || "Fintech Partner"}</strong>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm("Disconnect local key? Your balance remains saved on the server.")) {
+                                setUserApiKey("");
+                                setKeyOrgName("");
+                                setCreditsRemaining(null);
+                                if (typeof window !== "undefined") {
+                                  localStorage.removeItem("credova_api_key");
+                                  localStorage.removeItem("credova_org_name");
+                                }
+                              }
+                            }}
+                            className="text-[11px] text-slate-500 hover:text-rose-400 underline"
+                          >
+                            Disconnect Key
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            readOnly
+                            value={userApiKey}
+                            className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 font-mono text-xs text-amber-300 select-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(userApiKey);
+                              setCopiedKey(true);
+                              setTimeout(() => setCopiedKey(false), 2000);
+                            }}
+                            className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-white font-medium transition"
+                          >
+                            {copiedKey ? "✓ Copied" : "Copy"}
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          Pass this key in HTTP requests as header: <code className="text-amber-400">X-API-Key: {userApiKey.slice(0, 14)}...</code>
+                        </p>
+                      </div>
+                    )}
+
+                    {keyCreatedMsg && (
+                      <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-800/40 text-emerald-300 text-xs font-medium">
+                        {keyCreatedMsg}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right: Wallet Balance & Quick Topup */}
+                  <div className="space-y-3 bg-slate-900/60 p-4 rounded-lg border border-slate-800/80">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Wallet Balance</span>
+                      <span className="text-[11px] text-emerald-400 font-medium">Auto-Refill Ready</span>
+                    </div>
+                    <div className="flex items-baseline gap-3">
+                      <span className="text-3xl font-extrabold text-white">
+                        {creditsRemaining !== null ? creditsRemaining : 25}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        Credits remaining (~₦{((creditsRemaining !== null ? creditsRemaining : 25) * 350).toLocaleString()} NGN value)
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-[11px] font-semibold text-slate-400 block">Instant Credit Packs:</span>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          disabled={topupLoading || !userApiKey}
+                          onClick={() => handleQuickTopup(50, 17500)}
+                          className="p-2 rounded-lg bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-blue-500/50 text-left transition disabled:opacity-40"
+                        >
+                          <div className="text-xs font-bold text-white">+50 Credits</div>
+                          <div className="text-[10px] text-slate-400">₦17,500 ($12.50)</div>
+                          <div className="text-[9px] text-slate-500 mt-0.5">₦350/doc</div>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={topupLoading || !userApiKey}
+                          onClick={() => handleQuickTopup(200, 50000)}
+                          className="p-2 rounded-lg bg-blue-950/40 hover:bg-blue-900/50 border border-blue-500/40 text-left transition disabled:opacity-40 relative overflow-hidden"
+                        >
+                          <span className="absolute top-0 right-0 bg-blue-500 text-[8px] font-bold px-1 rounded-bl text-white">POPULAR</span>
+                          <div className="text-xs font-bold text-white">+200 Credits</div>
+                          <div className="text-[10px] text-blue-300">₦50,000 ($35.00)</div>
+                          <div className="text-[9px] text-emerald-400 mt-0.5">Save 28% (₦250/doc)</div>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={topupLoading || !userApiKey}
+                          onClick={() => handleQuickTopup(1000, 180000)}
+                          className="p-2 rounded-lg bg-amber-950/40 hover:bg-amber-900/50 border border-amber-500/40 text-left transition disabled:opacity-40 relative overflow-hidden"
+                        >
+                          <span className="absolute top-0 right-0 bg-amber-500 text-[8px] font-bold px-1 rounded-bl text-slate-950">SCALE</span>
+                          <div className="text-xs font-bold text-white">+1,000 Credits</div>
+                          <div className="text-[10px] text-amber-300">₦180,000 ($125)</div>
+                          <div className="text-[9px] text-emerald-400 mt-0.5">Save 48% (₦180/doc)</div>
+                        </button>
+                      </div>
+                      {!userApiKey && (
+                        <p className="text-[10px] text-amber-400/80 mt-1">
+                          * Generate an API key first to enable wallet top-ups.
+                        </p>
+                      )}
+                    </div>
+
+                    {topupMsg && (
+                      <div className="p-2 rounded bg-emerald-950/50 border border-emerald-800 text-emerald-300 text-xs">
+                        {topupMsg}
+                      </div>
+                    )}
+                    {topupErr && (
+                      <div className="p-2 rounded bg-rose-950/50 border border-rose-800 text-rose-300 text-xs">
+                        {topupErr}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 4 Pricing Tiers */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Subscription & Volume Tiers</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Tier 1 */}
+                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-between">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Developer Sandbox</div>
+                      <div className="mt-2 flex items-baseline gap-1">
+                        <span className="text-2xl font-bold text-white">Free</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">25 trial credits included with key creation.</p>
+                      <ul className="mt-4 space-y-2 text-xs text-slate-300">
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> 1 credit / single statement</li>
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> 2 credits / multi-consolidation</li>
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> Full fraud forensics & TAM</li>
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> Drop-in JS embed widget</li>
+                      </ul>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!userApiKey) {
+                          setKeyOrgName("Dev Sandbox");
+                        }
+                      }}
+                      className="mt-5 w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition"
+                    >
+                      {userApiKey ? "Active" : "Start Free"}
+                    </button>
+                  </div>
+
+                  {/* Tier 2 */}
+                  <div className="bg-slate-950 p-4 rounded-xl border border-blue-500/50 shadow-sm shadow-blue-500/10 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wide text-blue-400">Pay-As-You-Go</span>
+                        <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-bold">DEFAULT</span>
+                      </div>
+                      <div className="mt-2 flex items-baseline gap-1">
+                        <span className="text-2xl font-bold text-white">₦350</span>
+                        <span className="text-xs text-slate-400">/ credit</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">~$0.25 USD per statement. No monthly minimums.</p>
+                      <ul className="mt-4 space-y-2 text-xs text-slate-300">
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> Zero recurring subscription</li>
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> Instant wallet top-ups</li>
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> Webhook push events</li>
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> Nigeria, Ghana & Kenya</li>
+                      </ul>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickTopup(50, 17500)}
+                      className="mt-5 w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition"
+                    >
+                      Top Up Wallet
+                    </button>
+                  </div>
+
+                  {/* Tier 3 */}
+                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-between">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-wide text-indigo-400">Fintech Growth</div>
+                      <div className="mt-2 flex items-baseline gap-1">
+                        <span className="text-2xl font-bold text-white">₦50,000</span>
+                        <span className="text-xs text-slate-400">/ mo</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">200 credits included; extra at ₦250/credit.</p>
+                      <ul className="mt-4 space-y-2 text-xs text-slate-300">
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> 200 included monthly credits</li>
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> ₦250/credit overage (28% off)</li>
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> Dedicated processing queue</li>
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> Dedicated Slack channel</li>
+                      </ul>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickTopup(200, 50000)}
+                      className="mt-5 w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition"
+                    >
+                      Subscribe (₦50k)
+                    </button>
+                  </div>
+
+                  {/* Tier 4 */}
+                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-between">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-wide text-amber-400">Enterprise</div>
+                      <div className="mt-2 flex items-baseline gap-1">
+                        <span className="text-2xl font-bold text-white">₦250,000</span>
+                        <span className="text-xs text-slate-400">/ mo</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">1,500 credits included; extra at ₦160/credit.</p>
+                      <ul className="mt-4 space-y-2 text-xs text-slate-300">
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> 1,500 included monthly credits</li>
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> ₦160/credit overage (54% off)</li>
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> Custom risk policy calibration</li>
+                        <li className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span> 99.95% SLA + Dedicated IP</li>
+                      </ul>
+                    </div>
+                    <a
+                      href="mailto:support@credova.io?subject=Enterprise%20Underwriter%20Inquiry"
+                      className="mt-5 block text-center py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-xs font-bold text-slate-950 transition"
+                    >
+                      Contact Sales
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* Counterpart Comparison Matrix */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    Credova vs. Market Counterparts (Why We Win)
+                  </h3>
+                  <span className="text-[11px] text-slate-500">Benchmark Updated 2026</span>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+                  <table className="w-full text-left text-xs text-slate-300 border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 bg-slate-900/60 font-semibold text-slate-200">
+                        <th className="p-3">Feature / Capability</th>
+                        <th className="p-3 text-emerald-400 bg-emerald-950/20">Credova API (Ours)</th>
+                        <th className="p-3">Mono (Nigeria)</th>
+                        <th className="p-3">Indicina (Decide)</th>
+                        <th className="p-3">Ocrolus (US)</th>
+                        <th className="p-3">Okra</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                      <tr>
+                        <td className="p-3 font-sans font-medium text-slate-200">Cost per Statement</td>
+                        <td className="p-3 text-emerald-400 bg-emerald-950/20 font-bold">₦350 (~$0.25)</td>
+                        <td className="p-3 text-slate-400">₦400 (₦300+₦100)</td>
+                        <td className="p-3 text-slate-400">$500+/mo min + fee</td>
+                        <td className="p-3 text-slate-400">$1.50 - $3.50+</td>
+                        <td className="p-3 text-rose-400">Ceased Ops (2025)</td>
+                      </tr>
+                      <tr>
+                        <td className="p-3 font-sans font-medium text-slate-200">Borrower Friction</td>
+                        <td className="p-3 text-emerald-400 bg-emerald-950/20 font-bold">Zero (Upload PDF/Image)</td>
+                        <td className="p-3 text-rose-300">Requires Bank Login/2FA</td>
+                        <td className="p-3 text-slate-400">Hybrid Open Banking</td>
+                        <td className="p-3 text-slate-400">PDF / Image upload</td>
+                        <td className="p-3 text-slate-500">—</td>
+                      </tr>
+                      <tr>
+                        <td className="p-3 font-sans font-medium text-slate-200">Multi-Account Consolidation</td>
+                        <td className="p-3 text-emerald-400 bg-emerald-950/20 font-bold">Yes (Transfer Deduping)</td>
+                        <td className="p-3 text-slate-400">Manual per account</td>
+                        <td className="p-3 text-slate-400">Add-on module</td>
+                        <td className="p-3 text-slate-400">Manual stitching</td>
+                        <td className="p-3 text-slate-500">—</td>
+                      </tr>
+                      <tr>
+                        <td className="p-3 font-sans font-medium text-slate-200">Forensics & Fraud Defense</td>
+                        <td className="p-3 text-emerald-400 bg-emerald-950/20 font-bold">Pixel, Font & Velocity</td>
+                        <td className="p-3 text-slate-400">Direct ledger sync</td>
+                        <td className="p-3 text-slate-400">Custom rule builder</td>
+                        <td className="p-3 text-slate-400">US-specific fraud</td>
+                        <td className="p-3 text-slate-500">—</td>
+                      </tr>
+                      <tr>
+                        <td className="p-3 font-sans font-medium text-slate-200">Regional Coverage</td>
+                        <td className="p-3 text-emerald-400 bg-emerald-950/20 font-bold">🇳🇬 NG, 🇬🇭 GH, 🇰🇪 KE (M-PESA)</td>
+                        <td className="p-3 text-slate-400">Nigeria primarily</td>
+                        <td className="p-3 text-slate-400">Nigeria, Kenya</td>
+                        <td className="p-3 text-slate-400">USA, UK, Canada</td>
+                        <td className="p-3 text-slate-500">—</td>
+                      </tr>
+                      <tr>
+                        <td className="p-3 font-sans font-medium text-slate-200">Minimum Monthly Commitment</td>
+                        <td className="p-3 text-emerald-400 bg-emerald-950/20 font-bold">₦0 (Pay As You Go)</td>
+                        <td className="p-3 text-slate-400">₦0</td>
+                        <td className="p-3 text-rose-300">$500 – $1,500/mo min</td>
+                        <td className="p-3 text-rose-300">$1,000/mo min</td>
+                        <td className="p-3 text-slate-500">—</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>

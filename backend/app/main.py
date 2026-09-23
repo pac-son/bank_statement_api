@@ -3,7 +3,7 @@ import re
 import shutil
 import uuid
 from typing import Dict, Any, List, Optional
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -27,6 +27,13 @@ from .services.narrative_summary import generate_credit_narrative
 from .services.consolidation import consolidate_statements
 from .services.fraud_detector import evaluate_fraud_risk
 from .services.webhook import dispatch_webhook_notification
+from .services.billing import (
+    generate_api_key,
+    get_key_details,
+    validate_and_charge_key,
+    topup_key,
+    get_pricing_tiers
+)
 
 app = FastAPI(
     title="Credova — Pan-African Statement Intelligence & Underwriting API",
@@ -249,14 +256,61 @@ def read_root():
         "supported_countries": ["Nigeria (NGN)", "Ghana (GHS)", "Kenya (KES)"]
     }
 
+class CreateKeyRequest(BaseModel):
+    name: str
+    tier: Optional[str] = "payg"
+
+class TopupRequest(BaseModel):
+    api_key: str
+    credits: int
+    amount: float
+    currency: Optional[str] = "NGN"
+
+@app.get("/api/pricing")
+def get_pricing():
+    return get_pricing_tiers()
+
+@app.post("/api/keys")
+def create_key(req: CreateKeyRequest):
+    if not req.name or len(req.name.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Please provide a valid company or developer name.")
+    return generate_api_key(req.name.strip(), req.tier or "payg")
+
+@app.get("/api/keys/{api_key}")
+def get_key_info(api_key: str):
+    details = get_key_details(api_key)
+    if not details:
+        raise HTTPException(status_code=404, detail="API key not found")
+    return details
+
+@app.post("/api/topup")
+def topup_wallet(req: TopupRequest):
+    if req.credits <= 0:
+        raise HTTPException(status_code=400, detail="Credits to add must be greater than 0")
+    try:
+        return topup_key(req.api_key, req.credits, req.amount, req.currency or "NGN")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 @app.post("/statements/upload")
 async def upload_statement(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     password: Optional[str] = Form(None),
-    webhook_url: Optional[str] = Form(None)
+    webhook_url: Optional[str] = Form(None),
+    form_api_key: Optional[str] = Form(None, alias="api_key"),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    query_api_key: Optional[str] = Query(None, alias="api_key")
 ):
+    effective_key = x_api_key or form_api_key or query_api_key
     job_id = str(uuid.uuid4())
+
+    # Metering & Credit Verification (1 credit for single statement assessment)
+    ok, err_msg, credits_remaining = validate_and_charge_key(effective_key, 1, job_id, "single")
+    if not ok:
+        status_code = 402 if "Insufficient credits" in err_msg else 401
+        raise HTTPException(status_code=status_code, detail=err_msg)
+
     file_ext = os.path.splitext(file.filename)[1]
     saved_filename = f"{job_id}{file_ext}"
     dest_path = os.path.join(UPLOAD_DIR, saved_filename)
@@ -267,25 +321,42 @@ async def upload_statement(
     jobs_db[job_id] = {
         "status": "pending",
         "filename": file.filename,
-        "webhook_url": webhook_url
+        "webhook_url": webhook_url,
+        "credits_remaining": credits_remaining
     }
     
     background_tasks.add_task(process_file_background, job_id, dest_path, file.filename, password, webhook_url)
-    return {"job_id": job_id, "status": "pending", "message": "Statement upload accepted"}
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "message": "Statement upload accepted",
+        "credits_remaining": credits_remaining
+    }
 
 @app.post("/statements/consolidate")
 async def upload_multiple_statements(
     background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
     passwords: Optional[str] = Form(None),
-    webhook_url: Optional[str] = Form(None)
+    webhook_url: Optional[str] = Form(None),
+    form_api_key: Optional[str] = Form(None, alias="api_key"),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    query_api_key: Optional[str] = Query(None, alias="api_key")
 ):
     if len(files) < 2:
         raise HTTPException(status_code=400, detail="Please upload at least 2 bank statements to consolidate.")
     if len(files) > 3:
         raise HTTPException(status_code=400, detail="Maximum 3 bank statements can be consolidated at once.")
 
+    effective_key = x_api_key or form_api_key or query_api_key
     job_id = str(uuid.uuid4())
+
+    # Metering & Credit Verification (2 credits for multi-statement consolidation)
+    ok, err_msg, credits_remaining = validate_and_charge_key(effective_key, 2, job_id, "consolidate")
+    if not ok:
+        status_code = 402 if "Insufficient credits" in err_msg else 401
+        raise HTTPException(status_code=status_code, detail=err_msg)
+
     pwd_list = [p.strip() for p in (passwords.split(",") if passwords else [])]
 
     file_tuples = []
@@ -302,11 +373,17 @@ async def upload_multiple_statements(
         "status": "pending",
         "is_consolidated": True,
         "files_count": len(files),
-        "webhook_url": webhook_url
+        "webhook_url": webhook_url,
+        "credits_remaining": credits_remaining
     }
 
     background_tasks.add_task(process_multi_files_background, job_id, file_tuples, webhook_url)
-    return {"job_id": job_id, "status": "pending", "message": "Consolidation job accepted"}
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "message": "Consolidation job accepted",
+        "credits_remaining": credits_remaining
+    }
 
 @app.get("/statements/{job_id}")
 def get_statement_status(job_id: str):
