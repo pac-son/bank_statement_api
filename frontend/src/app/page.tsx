@@ -141,9 +141,20 @@ interface StatementResult {
   error?: string;
 }
 
-const rawApi = process.env.NEXT_PUBLIC_API_URL || "";
+// Polyfill process in browser environments if not present
+if (typeof window !== "undefined" && !(window as any).process) {
+  (window as any).process = { env: {} };
+}
+
 const getApiBase = () => {
-  if (rawApi) return rawApi.startsWith("http") ? rawApi : `https://${rawApi}`;
+  try {
+    if (typeof process !== "undefined" && process?.env?.NEXT_PUBLIC_API_URL) {
+      const raw = process.env.NEXT_PUBLIC_API_URL;
+      return raw.startsWith("http") ? raw : `https://${raw}`;
+    }
+  } catch {
+    // browser environment
+  }
   if (typeof window !== "undefined" && window.location.port === "3210") {
     return "http://127.0.0.1:8000";
   }
@@ -376,21 +387,23 @@ export default function Home() {
         {/* Mode Selector Tabs */}
         <div className="flex border-b border-slate-800 gap-4">
           <button
+            type="button"
             onClick={() => setMode("single")}
-            className={`pb-3 text-sm font-semibold border-b-2 transition ${
+            className={`pb-3 text-sm font-semibold border-b-2 cursor-pointer transition ${
               mode === "single"
                 ? "border-blue-500 text-blue-400"
-                : "border-transparent text-slate-400 hover:text-slate-200"
+                : "border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700"
             }`}
           >
             Single Statement Analysis
           </button>
           <button
+            type="button"
             onClick={() => setMode("consolidate")}
-            className={`pb-3 text-sm font-semibold border-b-2 transition flex items-center gap-1.5 ${
+            className={`pb-3 text-sm font-semibold border-b-2 cursor-pointer transition flex items-center gap-1.5 ${
               mode === "consolidate"
                 ? "border-blue-500 text-blue-400"
-                : "border-transparent text-slate-400 hover:text-slate-200"
+                : "border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700"
             }`}
           >
             <span>Multi-Account Consolidation</span>
@@ -399,11 +412,12 @@ export default function Home() {
             </span>
           </button>
           <button
+            type="button"
             onClick={() => setMode("api_docs")}
-            className={`pb-3 text-sm font-semibold border-b-2 transition flex items-center gap-1.5 ${
+            className={`pb-3 text-sm font-semibold border-b-2 cursor-pointer transition flex items-center gap-1.5 ${
               mode === "api_docs"
                 ? "border-blue-500 text-blue-400"
-                : "border-transparent text-slate-400 hover:text-slate-200"
+                : "border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700"
             }`}
           >
             <span>Developer API & SDK</span>
