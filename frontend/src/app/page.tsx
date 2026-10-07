@@ -436,24 +436,31 @@ export default function Home() {
     <main className="min-h-screen bg-slate-950 text-slate-100 p-8">
       <div className="max-w-5xl mx-auto space-y-8">
         <header className="border-b border-slate-800 pb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 text-white font-black text-sm shadow-md shadow-blue-500/20">
-                C
-              </span>
-              <span className="text-xs font-bold uppercase tracking-wider text-blue-400">
-                Pan-African Statement Intelligence
-              </span>
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="relative group shrink-0">
+              <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-emerald-500 rounded-2xl blur-sm opacity-40 group-hover:opacity-75 transition duration-300"></div>
+              <img
+                src="/credova-logo-mark.jpg"
+                alt="Credova"
+                className="relative w-12 h-12 rounded-xl object-cover border border-cyan-400/30 shadow-lg shadow-cyan-500/10"
+              />
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
-              Credova
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider">
-                Underwriting Engine
-              </span>
-            </h1>
-            <p className="text-slate-400 text-sm mt-1">
-              Automated Statement Parsing, Fraud Forensics & Risk Analytics for Nigeria 🇳🇬, Ghana 🇬🇭, and Kenya 🇰🇪.
-            </p>
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-400">
+                  Pan-African Statement Intelligence
+                </span>
+              </div>
+              <h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
+                Credova
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider">
+                  Underwriting Engine
+                </span>
+              </h1>
+              <p className="text-slate-400 text-sm mt-0.5">
+                Automated Statement Parsing, Fraud Forensics & Risk Analytics for Nigeria 🇳🇬, Ghana 🇬🇭, and Kenya 🇰🇪.
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             {userApiKey && (

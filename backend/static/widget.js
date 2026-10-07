@@ -60,12 +60,18 @@
       card.style.position = "relative";
 
       card.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
-          <div>
-            <h3 style="margin:0; font-size:18px; font-weight:700;">Upload Bank Statement</h3>
-            <p style="margin:4px 0 0 0; font-size:12px; color:#94a3b8;">Powered by Credova for ${this.lenderName}</p>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; border-bottom:1px solid #1e293b; padding-bottom:14px;">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <img src="${this.apiUrl}/credova-logo-mark.jpg" alt="Credova" onerror="this.style.display='none'" style="width:38px; height:38px; border-radius:10px; object-fit:cover; border:1px solid rgba(0, 210, 255, 0.3); box-shadow:0 4px 12px rgba(0, 210, 255, 0.15);" />
+            <div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:15px; font-weight:700; color:#fff; letter-spacing:-0.3px;">Credova</span>
+                <span style="font-size:10px; font-weight:600; padding:1px 6px; border-radius:4px; background:rgba(0, 210, 255, 0.12); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.2);">SECURE VERIFY</span>
+              </div>
+              <p style="margin:2px 0 0 0; font-size:11px; color:#94a3b8;">Borrower assessment for <strong style="color:#e2e8f0;">${this.lenderName}</strong></p>
+            </div>
           </div>
-          <button id="bsw-close-btn" style="background:none; border:none; color:#94a3b8; font-size:22px; cursor:pointer; padding:4px;">&times;</button>
+          <button id="bsw-close-btn" style="background:none; border:none; color:#94a3b8; font-size:22px; cursor:pointer; padding:4px; line-height:1;">&times;</button>
         </div>
 
         <div id="bsw-dropzone" style="border:2px dashed ${this.primaryColor}55; border-radius:12px; padding:24px 16px; text-align:center; background:${this.primaryColor}0a; cursor:pointer; margin-bottom:16px;">
@@ -86,6 +92,14 @@
         </button>
 
         <div id="bsw-status-msg" style="margin-top:14px; font-size:12px; text-align:center; display:none;"></div>
+
+        <div style="margin-top:16px; padding-top:12px; border-top:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#64748b;">
+          <span style="display:flex; align-items:center; gap:4px;">
+            <span style="width:6px; height:6px; border-radius:50%; background:#10b981; display:inline-block;"></span>
+            256-bit Bank Encryption
+          </span>
+          <span>Powered by <strong>Credova</strong></span>
+        </div>
       `;
 
       overlay.appendChild(card);

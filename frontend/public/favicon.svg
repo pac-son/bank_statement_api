@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="credova-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00D2FF" />
+      <stop offset="50%" stop-color="#00F5D4" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+    <linearGradient id="shield-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#059669" stop-opacity="0.1" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#090E17" />
+  <!-- Shield outline -->
+  <path d="M32 9 C43 13 49 16 51 28 C51 42 41 49 32 55 C23 49 13 42 13 28 C15 16 21 13 32 9 Z" 
+        fill="url(#shield-grad)" stroke="url(#credova-grad)" stroke-width="2.5" stroke-linejoin="round" />
+  <!-- Stylized C with growth curve -->
+  <path d="M36 21 C24 21 21 27 21 32 C21 37.5 24.5 43 36 43" 
+        fill="none" stroke="url(#credova-grad)" stroke-width="3.5" stroke-linecap="round" />
+  <!-- Upward Trend Pulse Arrow -->
+  <path d="M22 36 L29 29 L35 34 L43 23" 
+        fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M37 23 H43 V29" 
+        fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
