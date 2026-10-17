@@ -1,5 +1,5 @@
 services:
-  # ---------------- BACKEND ----------------
+  # Credova All-in-One Engine (FastAPI + Embedded Underwriting Dashboard + Tesseract OCR)
   - type: web
     name: credova-api
     env: docker
@@ -14,13 +14,4 @@ services:
         sync: false
       - key: PAYSTACK_SECRET_KEY
         sync: false
-
-  # ---------------- FRONTEND ----------------
-  - type: web
-    name: credova-frontend  # (Use whatever name you already have here)
-    # ... keep your existing env, buildCommand, and startCommand here ...
-    envVars:
-      - key: NEXT_PUBLIC_PAYSTACK_KEY
-        sync: false
-      - key: SWIFT_RUST_SITE_URL
-        sync: false
+      
