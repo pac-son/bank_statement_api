@@ -84,8 +84,23 @@ export default function CheckoutButton({
         ],
       },
       callback: function (response: { reference: string }) {
-        // Call FastAPI to verify payment and credit the wallet
-        fetch("http://localhost:8000/api/paystack/verify", {
+        const getApiBase = () => {
+          try {
+            if (typeof process !== "undefined" && process?.env?.NEXT_PUBLIC_API_URL) {
+              const raw = process.env.NEXT_PUBLIC_API_URL;
+              return raw.startsWith("http") ? raw.replace(/\/$/, "") : `https://${raw.replace(/\/$/, "")}`;
+            }
+          } catch {
+            // browser environment
+          }
+          if (typeof window !== "undefined" && (window.location.port === "3210" || window.location.port === "3000")) {
+            return "http://127.0.0.1:8000";
+          }
+          return "";
+        };
+        const apiBase = getApiBase();
+
+        fetch(`${apiBase}/api/paystack/verify`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -101,13 +116,14 @@ export default function CheckoutButton({
               alert(`Payment verified! Added ${data.credits_added} credits. New balance: ${data.new_balance}`);
               window.location.href = `/billing?payment=success&reference=${response.reference}`;
             } else {
-              const err = await res.json();
-              alert(`Payment succeeded, but verification failed: ${err.detail}`);
+              const err = await res.json().catch(() => ({ detail: "Verification error" }));
+              alert(`Payment succeeded, but verification failed: ${err.detail || "Server error"}`);
             }
           })
           .catch((err) => {
             console.error(err);
             setLoading(false);
+            alert("Network error connecting to verification server.");
           });
       },
       onClose: function () {
