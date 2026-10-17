@@ -84,9 +84,31 @@ export default function CheckoutButton({
         ],
       },
       callback: function (response: { reference: string }) {
-        setLoading(false);
-        // Redirect upon successful payment
-        window.location.href = `/billing?payment=success&reference=${response.reference}`;
+        // Call FastAPI to verify payment and credit the wallet
+        fetch("http://localhost:8000/api/paystack/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reference: response.reference,
+            api_key: apiKey,
+            plan_id: planId,
+          }),
+        })
+          .then(async (res) => {
+            setLoading(false);
+            if (res.ok) {
+              const data = await res.json();
+              alert(`Payment verified! Added ${data.credits_added} credits. New balance: ${data.new_balance}`);
+              window.location.href = `/billing?payment=success&reference=${response.reference}`;
+            } else {
+              const err = await res.json();
+              alert(`Payment succeeded, but verification failed: ${err.detail}`);
+            }
+          })
+          .catch((err) => {
+            console.error(err);
+            setLoading(false);
+          });
       },
       onClose: function () {
         setLoading(false);

@@ -9,7 +9,7 @@ const MOCK_PLANS = [
 
 export default function BillingRoute() {
   // Hardcoded for testing; later you will fetch this from your auth state
-  const testApiKey = "cdv_test_123456"; 
+  const testApiKey = "cdv_demo_public_unlimited"; 
 
   return (
     <div className="container-page py-12">
@@ -23,7 +23,7 @@ export function PricingPage({ plans, userApiKey }: { plans: any[], userApiKey: s
   return (
     <div className="grid sm:grid-cols-3 gap-4">
       {plans.filter(plan => plan.id !== "trial").map((plan) => (
-        <div key={plan.id} className="card p-6">
+        <div key={plan.id} className="bg-white text-gray-900 dark:bg-gray-900 p-6">
           <h3 className="text-lg font-bold">{plan.name}</h3>
           <p className="text-2xl mt-2">{plan.price}</p>
           <div className="mt-6">

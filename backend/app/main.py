@@ -1,12 +1,21 @@
 import os
 import re
+import requests
 import shutil
 import uuid
+import json
+import hmac
+import hashlib
+from dotenv import load_dotenv
 from typing import Dict, Any, List, Optional
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Header, Query
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+# Explicitly load the .env file from the backend root directory
+env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+load_dotenv(dotenv_path=env_path)
 
 import pdfplumber
 import pytesseract
@@ -291,6 +300,99 @@ def topup_wallet(req: TopupRequest):
         return topup_key(req.api_key, req.credits, req.amount, req.currency or "NGN")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+class PaystackVerifyRequest(BaseModel):
+    reference: str
+    api_key: Optional[str] = None
+    plan_id: Optional[str] = None
+
+def calculate_credits_for_plan(plan_id: Optional[str], amount_ngn: float) -> int:
+    if plan_id == "growth":
+        return 200
+    elif plan_id == "enterprise":
+        return 1000
+    # Default to PAYG rate (₦350 per credit)
+    return max(1, int(amount_ngn // 350))
+
+@app.post("/api/paystack/verify")
+def verify_paystack_payment(req: PaystackVerifyRequest):
+    secret_key = os.environ.get("PAYSTACK_SECRET_KEY")
+    if not secret_key:
+        raise HTTPException(status_code=500, detail="PAYSTACK_SECRET_KEY not configured on backend")
+
+    headers = {"Authorization": f"Bearer {secret_key}"}
+    res = requests.get(f"https://api.paystack.co/transaction/verify/{req.reference}", headers=headers, timeout=10)
+    
+    if not res.ok:
+        raise HTTPException(status_code=400, detail="Could not verify transaction with Paystack")
+
+    payload = res.json()
+    data = payload.get("data", {})
+
+    if data.get("status") != "success":
+        raise HTTPException(status_code=400, detail=f"Transaction status is {data.get('status')}")
+
+    metadata = data.get("metadata", {}) if isinstance(data.get("metadata"), dict) else {}
+    api_key = req.api_key or metadata.get("api_key")
+    plan_id = req.plan_id or metadata.get("plan_id")
+    amount_paid = data.get("amount", 0) / 100.0
+    currency = data.get("currency", "NGN")
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="No API key associated with this payment")
+
+    credits_to_add = calculate_credits_for_plan(plan_id, amount_paid)
+
+    try:
+        return topup_key(
+            api_key=api_key,
+            credits=credits_to_add,
+            amount_paid=amount_paid,
+            currency=currency,
+            payment_method="paystack",
+            reference=req.reference
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.post("/webhooks/paystack")
+async def paystack_webhook(request: Request, x_paystack_signature: str = Header(None, alias="x-paystack-signature")):
+    secret_key = os.environ.get("PAYSTACK_SECRET_KEY")
+    if not secret_key:
+        raise HTTPException(status_code=500, detail="PAYSTACK_SECRET_KEY not configured")
+
+    raw_body = await request.body()
+    expected_sig = hmac.new(secret_key.encode("utf-8"), raw_body, hashlib.sha512).hexdigest()
+
+    if not x_paystack_signature or not hmac.compare_digest(expected_sig, x_paystack_signature):
+        raise HTTPException(status_code=400, detail="Invalid Paystack signature")
+
+    event = json.loads(raw_body)
+    if event.get("event") == "charge.success":
+        data = event.get("data", {})
+        reference = data.get("reference")
+        amount_paid = data.get("amount", 0) / 100.0
+        currency = data.get("currency", "NGN")
+        metadata = data.get("metadata", {}) if isinstance(data.get("metadata"), dict) else {}
+
+        api_key = metadata.get("api_key")
+        plan_id = metadata.get("plan_id")
+
+        if api_key and reference:
+            credits_to_add = calculate_credits_for_plan(plan_id, amount_paid)
+            try:
+                topup_key(
+                    api_key=api_key,
+                    credits=credits_to_add,
+                    amount_paid=amount_paid,
+                    currency=currency,
+                    payment_method="paystack_webhook",
+                    reference=reference
+                )
+            except ValueError:
+                pass
+
+    return {"status": "ok"}
 
 @app.post("/statements/upload")
 async def upload_statement(
