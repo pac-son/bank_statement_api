@@ -438,7 +438,7 @@ export default function Home() {
         <header className="border-b border-slate-800 pb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start sm:items-center gap-3.5">
             <div className="relative group shrink-0">
-              <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-emerald-500 rounded-2xl blur-sm opacity-40 group-hover:opacity-75 transition duration-300"></div>
+              <div className="absolute -inset-1 bg-linear-to-r from-cyan-500 to-emerald-500 rounded-2xl blur-sm opacity-40 group-hover:opacity-75 transition duration-300"></div>
               <img
                 src="/credova-logo-mark.jpg"
                 alt="Credova"
@@ -578,7 +578,7 @@ export default function Home() {
                     type="file"
                     accept=".pdf,image/*"
                     onChange={(e) => setSingleFile(e.target.files?.[0] || null)}
-                    className="file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 text-sm text-slate-400 w-full cursor-pointer bg-slate-800/40 rounded-lg p-1.5 border border-slate-700/60"
+                    className="file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 w-full cursor-pointer p-1.5 border-slate-700/60"
                   />
                 </div>
                 <div>
@@ -587,7 +587,7 @@ export default function Home() {
                     placeholder="PDF Password (if protected)"
                     value={singlePassword}
                     onChange={(e) => setSinglePassword(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-lg bg-slate-800/60 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    className="w-full px-4 py-2.5 rounded-lg bg-slate-800/60 border text-sm placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
@@ -598,7 +598,7 @@ export default function Home() {
                     placeholder="Optional Webhook Notification URL (e.g. https://your-app.com/api/webhooks)"
                     value={singleWebhook}
                     onChange={(e) => setSingleWebhook(e.target.value)}
-                    className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 focus:outline-none"
                   />
                 </div>
                 <div>
@@ -607,7 +607,7 @@ export default function Home() {
                     placeholder="API Key (optional, defaults to Sandbox)"
                     value={userApiKey}
                     onChange={(e) => setUserApiKey(e.target.value)}
-                    className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono"
+                    className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 focus:outline-none font-mono"
                   />
                 </div>
               </div>
@@ -643,7 +643,7 @@ export default function Home() {
                     multiple
                     accept=".pdf,image/*"
                     onChange={(e) => setMultiFiles(e.target.files)}
-                    className="file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 text-sm text-slate-400 w-full cursor-pointer bg-slate-800/40 rounded-lg p-1.5 border border-slate-700/60"
+                    className="file:mr-4 file:py-2.5 file:px-4 file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 w-full cursor-pointer rounded-lg p-1.5 border-slate-700/60"
                   />
                 </div>
                 <div>
@@ -652,7 +652,7 @@ export default function Home() {
                     placeholder="Passwords (comma-separated)"
                     value={multiPasswords}
                     onChange={(e) => setMultiPasswords(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-lg bg-slate-800/60 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    className="w-full px-4 py-2.5 rounded-lg bg-slate-800/60 border text-sm text-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
@@ -663,7 +663,7 @@ export default function Home() {
                     placeholder="Optional Webhook Notification URL (e.g. https://your-app.com/api/webhooks)"
                     value={multiWebhook}
                     onChange={(e) => setMultiWebhook(e.target.value)}
-                    className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div>
@@ -672,7 +672,7 @@ export default function Home() {
                     placeholder="API Key (optional, defaults to Sandbox)"
                     value={userApiKey}
                     onChange={(e) => setUserApiKey(e.target.value)}
-                    className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono"
+                    className="w-full px-4 py-2 rounded-lg bg-slate-800/40 border text-xs placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono"
                   />
                 </div>
               </div>
@@ -714,7 +714,7 @@ export default function Home() {
               {/* Endpoints Table */}
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Core API Endpoints</h3>
-                <div className="bg-slate-950/80 rounded-lg border border-slate-800 overflow-hidden divide-y divide-slate-800/60 font-mono text-xs">
+                <div className="bg-slate-950/80 rounded-lg border border-slate-800 overflow-hidden divide-y font-mono text-xs">
                   <div className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5">
                       <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-bold">POST</span>
@@ -916,7 +916,7 @@ console.log("Credits remaining:", res.data.credits_remaining);`}</pre>
                             value={keyOrgName}
                             onChange={(e) => setKeyOrgName(e.target.value)}
                             required
-                            className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                            className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none"
                           />
                           <button
                             type="submit"

@@ -142,6 +142,8 @@ frontend/
     widget.js
   src/
     app/
+      billing/
+        page.tsx
       error.tsx
       favicon.ico
       favicon.svg
@@ -150,6 +152,8 @@ frontend/
       loading.tsx
       not-found.tsx
       page.tsx
+    components/
+      CheckoutButton.tsx
     lib/
       blur.ts
       format.ts
@@ -641,324 +645,6 @@ class PalmPayParser(BaseParser):
                     })
 
         return transactions
-</file>
-
-<file path="backend/app/services/billing.py">
-import os
-import sqlite3
-import secrets
-import time
-from typing import Optional, Dict, Any, Tuple
-
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "credova.db")
-
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_billing_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # 1. API Keys Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS api_keys (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            api_key TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            tier TEXT NOT NULL DEFAULT 'payg',
-            credits_balance INTEGER NOT NULL DEFAULT 25,
-            total_used INTEGER NOT NULL DEFAULT 0,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    # 2. Usage Logs Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS usage_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            api_key TEXT NOT NULL,
-            job_id TEXT NOT NULL,
-            job_type TEXT NOT NULL,
-            credits_deducted INTEGER NOT NULL,
-            balance_after INTEGER NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    # 3. Top-Up Transactions Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS topup_transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            api_key TEXT NOT NULL,
-            reference TEXT UNIQUE NOT NULL,
-            credits_added INTEGER NOT NULL,
-            amount_paid REAL NOT NULL,
-            currency TEXT NOT NULL DEFAULT 'NGN',
-            payment_method TEXT NOT NULL DEFAULT 'instant_wallet',
-            status TEXT NOT NULL DEFAULT 'success',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    # Insert default demo key if not present
-    cursor.execute("SELECT id FROM api_keys WHERE api_key = 'cdv_demo_public_unlimited'")
-    if not cursor.fetchone():
-        cursor.execute("""
-            INSERT INTO api_keys (api_key, name, tier, credits_balance, total_used, is_active)
-            VALUES ('cdv_demo_public_unlimited', 'Credova Public Demo Sandbox', 'trial', 1000, 0, 1)
-        """)
-        
-    conn.commit()
-    conn.close()
-
-# Auto-initialize on module load
-init_billing_db()
-
-def generate_api_key(name: str, tier: str = "payg") -> Dict[str, Any]:
-    """
-    Creates a new Credova API key with 25 free trial credits.
-    """
-    random_token = secrets.token_hex(16)
-    prefix = "cdv_test" if tier == "trial" else "cdv_live"
-    api_key = f"{prefix}_{random_token}"
-    initial_credits = 25  # Free starter quota (~₦8,750 value)
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO api_keys (api_key, name, tier, credits_balance, total_used, is_active)
-        VALUES (?, ?, ?, ?, 0, 1)
-    """, (api_key, name, tier, initial_credits))
-    conn.commit()
-    conn.close()
-    
-    return {
-        "api_key": api_key,
-        "name": name,
-        "tier": tier,
-        "credits_balance": initial_credits,
-        "total_used": 0,
-        "message": "API key successfully created with 25 free starter credits (~₦8,750 value)!"
-    }
-
-def get_key_details(api_key: str) -> Optional[Dict[str, Any]]:
-    """
-    Retrieves key details, current credit balance, and usage statistics.
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT api_key, name, tier, credits_balance, total_used, is_active, created_at
-        FROM api_keys
-        WHERE api_key = ?
-    """, (api_key,))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if not row:
-        return None
-        
-    return {
-        "api_key": row["api_key"],
-        "name": row["name"],
-        "tier": row["tier"],
-        "credits_balance": row["credits_balance"],
-        "total_used": row["total_used"],
-        "is_active": bool(row["is_active"]),
-        "created_at": row["created_at"]
-    }
-
-def validate_and_charge_key(
-    api_key: Optional[str],
-    credits_needed: int,
-    job_id: str,
-    job_type: str
-) -> Tuple[bool, Optional[str], int]:
-    """
-    Validates the API key and charges the required credits atomically.
-    Returns (success: bool, error_message: Optional[str], remaining_credits: int).
-    """
-    # If no key is provided, use the public demo key for sandbox evaluation
-    if not api_key or api_key.strip() == "":
-        api_key = "cdv_demo_public_unlimited"
-        
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        SELECT api_key, credits_balance, total_used, is_active
-        FROM api_keys
-        WHERE api_key = ?
-    """, (api_key,))
-    row = cursor.fetchone()
-    
-    if not row:
-        conn.close()
-        return False, f"Invalid API key: '{api_key}'. Please generate an API key on the Credova dashboard.", 0
-        
-    if not row["is_active"]:
-        conn.close()
-        return False, "This API key has been deactivated. Please contact support@credova.io.", 0
-        
-    balance = row["credits_balance"]
-    if balance < credits_needed:
-        conn.close()
-        return False, (
-            f"Insufficient credits. This operation requires {credits_needed} credit(s), "
-            f"but your balance is {balance} credit(s). Please top up your Credova wallet."
-        ), balance
-
-    # Deduct credits
-    new_balance = balance - credits_needed
-    new_used = row["total_used"] + credits_needed
-    
-    cursor.execute("""
-        UPDATE api_keys
-        SET credits_balance = ?, total_used = ?
-        WHERE api_key = ?
-    """, (new_balance, new_used, api_key))
-    
-    # Log usage
-    cursor.execute("""
-        INSERT INTO usage_logs (api_key, job_id, job_type, credits_deducted, balance_after)
-        VALUES (?, ?, ?, ?, ?)
-    """, (api_key, job_id, job_type, credits_needed, new_balance))
-    
-    conn.commit()
-    conn.close()
-    
-    return True, None, new_balance
-
-def topup_key(
-    api_key: str,
-    credits: int,
-    amount_paid: float,
-    currency: str = "NGN",
-    payment_method: str = "instant_wallet"
-) -> Dict[str, Any]:
-    """
-    Adds credits to an existing API key wallet.
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT credits_balance, total_used FROM api_keys WHERE api_key = ?", (api_key,))
-    row = cursor.fetchone()
-    
-    if not row:
-        conn.close()
-        raise ValueError(f"API key '{api_key}' not found.")
-        
-    new_balance = row["credits_balance"] + credits
-    cursor.execute("UPDATE api_keys SET credits_balance = ? WHERE api_key = ?", (new_balance, api_key))
-    
-    reference = f"top_{int(time.time())}_{secrets.token_hex(4)}"
-    cursor.execute("""
-        INSERT INTO topup_transactions (api_key, reference, credits_added, amount_paid, currency, payment_method, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'success')
-    """, (api_key, reference, credits, amount_paid, currency, payment_method))
-    
-    conn.commit()
-    conn.close()
-    
-    return {
-        "api_key": api_key,
-        "credits_added": credits,
-        "new_balance": new_balance,
-        "reference": reference,
-        "amount_paid": amount_paid,
-        "currency": currency,
-        "status": "success"
-    }
-
-def get_pricing_tiers() -> Dict[str, Any]:
-    """
-    Returns public pricing plans and counterpart benchmarks.
-    """
-    return {
-        "currency_rates": {
-            "credit_cost_single_ngn": 350,
-            "credit_cost_consolidated_ngn": 700,
-            "credit_cost_single_usd": 0.25,
-            "credit_cost_consolidated_usd": 0.50
-        },
-        "plans": [
-            {
-                "id": "trial",
-                "name": "Developer Trial",
-                "price": "₦0 / Free",
-                "price_usd": "$0",
-                "badge": "FREE STARTER",
-                "description": "Ideal for exploring the API, testing parsers, and proof-of-concept builds.",
-                "included_credits": 25,
-                "overage_rate": "₦350 / assessment",
-                "features": [
-                    "25 Free Assessments included (~₦8,750 value)",
-                    "Single Statement & Multi-Account Parsing",
-                    "Authenticity & Tampering Forensics",
-                    "Digital Loan-Stacking Detection",
-                    "Interactive Swagger Docs & Web Widget"
-                ]
-            },
-            {
-                "id": "payg",
-                "name": "Pay-As-You-Go",
-                "price": "₦350",
-                "price_usd": "$0.25",
-                "billing": "per statement (no monthly fee)",
-                "badge": "MOST FLEXIBLE",
-                "description": "Prepaid wallet for independent loan brokers, pilot fintechs, and variable volumes.",
-                "included_credits": "Fund on demand",
-                "overage_rate": "₦350 single / ₦700 multi",
-                "features": [
-                    "Zero monthly subscription commitment",
-                    "Pay only for successfully completed assessments",
-                    "Instant wallet top-up via Paystack / Card",
-                    "Webhooks for asynchronous pipeline integration",
-                    "Full Pan-African Bank Support (NG, GH, KE)"
-                ]
-            },
-            {
-                "id": "growth",
-                "name": "Fintech Growth",
-                "price": "₦50,000",
-                "price_usd": "$35",
-                "billing": "per month",
-                "badge": "POPULAR FOR LENDERS",
-                "description": "Designed for active digital lending apps, BNPL originators, and credit unions.",
-                "included_credits": 200,
-                "overage_rate": "₦250 / assessment (28% discount)",
-                "features": [
-                    "200 statement assessments included monthly",
-                    "Discounted overage rate (₦250 per call)",
-                    "Sub-second priority processing queue",
-                    "Unlimited multi-account cross-bank consolidations",
-                    "Email & Slack technical developer support"
-                ]
-            },
-            {
-                "id": "enterprise",
-                "name": "Enterprise Underwriter",
-                "price": "₦200,000",
-                "price_usd": "$140",
-                "billing": "per month",
-                "badge": "HIGH VOLUME",
-                "description": "For Microfinance Banks (MFBs), commercial lenders, and high-frequency underwriting.",
-                "included_credits": 1000,
-                "overage_rate": "₦180 / assessment (48% discount)",
-                "features": [
-                    "1,000 statement assessments included monthly",
-                    "Maximum volume discount (₦180 per call)",
-                    "Custom debt-to-income (DTI) & risk thresholds",
-                    "Dedicated SLA (99.9% uptime guarantee)",
-                    "Dedicated solutions architect & custom parser onboarding"
-                ]
-            }
-        ]
-    }
 </file>
 
 <file path="backend/app/services/consolidation.py">
@@ -3576,42 +3262,6 @@ declare module "*.webp" {
 }
 </file>
 
-<file path="frontend/package.json">
-{
-  "name": "frontend",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "swift-rust dev",
-    "build": "swift-rust build",
-    "start": "swift-rust start",
-    "lint": "biome check .",
-    "format": "biome format --write .",
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
-  },
-  "dependencies": {
-    "@tailwindcss/postcss": "^4.3.0",
-    "postcss": "^8.5.15",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "swift-rust": "^1.10.11",
-    "tailwindcss": "^4.3.0"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.4.16",
-    "@types/bun": "^1.3.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "typescript": "^6.0.0"
-  },
-  "engines": {
-    "bun": ">=1.3.0"
-  }
-}
-</file>
-
 <file path="frontend/postcss.config.mjs">
 const config = {
   plugins: {
@@ -4051,6 +3701,332 @@ class UBAParser(BaseParser):
         return transactions
 </file>
 
+<file path="backend/app/services/billing.py">
+import os
+import secrets
+import time
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from typing import Optional, Dict, Any, Tuple
+
+def get_db_connection():
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        raise ValueError("DATABASE_URL environment variable is not set. Please configure your PostgreSQL connection string.")
+    
+    # RealDictCursor allows accessing row columns by name (e.g., row["credits_balance"])
+    conn = psycopg2.connect(db_url, cursor_factory=RealDictCursor)
+    return conn
+
+def init_billing_db():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. API Keys Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id SERIAL PRIMARY KEY,
+                api_key TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                tier TEXT NOT NULL DEFAULT 'payg',
+                credits_balance INTEGER NOT NULL DEFAULT 25,
+                total_used INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # 2. Usage Logs Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS usage_logs (
+                id SERIAL PRIMARY KEY,
+                api_key TEXT NOT NULL,
+                job_id TEXT NOT NULL,
+                job_type TEXT NOT NULL,
+                credits_deducted INTEGER NOT NULL,
+                balance_after INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # 3. Top-Up Transactions Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS topup_transactions (
+                id SERIAL PRIMARY KEY,
+                api_key TEXT NOT NULL,
+                reference TEXT UNIQUE NOT NULL,
+                credits_added INTEGER NOT NULL,
+                amount_paid REAL NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'NGN',
+                payment_method TEXT NOT NULL DEFAULT 'instant_wallet',
+                status TEXT NOT NULL DEFAULT 'success',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Insert default demo key if not present (using ON CONFLICT to avoid duplicate errors)
+        cursor.execute("""
+            INSERT INTO api_keys (api_key, name, tier, credits_balance, total_used, is_active)
+            VALUES ('cdv_demo_public_unlimited', 'Credova Public Demo Sandbox', 'trial', 1000, 0, 1)
+            ON CONFLICT (api_key) DO NOTHING
+        """)
+            
+        conn.commit()
+    except Exception as e:
+        print(f"Database initialization warning: {e}")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+# Auto-initialize on module load (requires DATABASE_URL to be present)
+if os.environ.get("DATABASE_URL"):
+    init_billing_db()
+
+def generate_api_key(name: str, tier: str = "payg") -> Dict[str, Any]:
+    random_token = secrets.token_hex(16)
+    prefix = "cdv_test" if tier == "trial" else "cdv_live"
+    api_key = f"{prefix}_{random_token}"
+    initial_credits = 25
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO api_keys (api_key, name, tier, credits_balance, total_used, is_active)
+        VALUES (%s, %s, %s, %s, 0, 1)
+    """, (api_key, name, tier, initial_credits))
+    conn.commit()
+    conn.close()
+    
+    return {
+        "api_key": api_key,
+        "name": name,
+        "tier": tier,
+        "credits_balance": initial_credits,
+        "total_used": 0,
+        "message": "API key successfully created with 25 free starter credits (~₦8,750 value)!"
+    }
+
+def get_key_details(api_key: str) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT api_key, name, tier, credits_balance, total_used, is_active, created_at
+        FROM api_keys
+        WHERE api_key = %s
+    """, (api_key,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+        
+    return {
+        "api_key": row["api_key"],
+        "name": row["name"],
+        "tier": row["tier"],
+        "credits_balance": row["credits_balance"],
+        "total_used": row["total_used"],
+        "is_active": bool(row["is_active"]),
+        "created_at": row["created_at"]
+    }
+
+def validate_and_charge_key(
+    api_key: Optional[str],
+    credits_needed: int,
+    job_id: str,
+    job_type: str
+) -> Tuple[bool, Optional[str], int]:
+    if not api_key or api_key.strip() == "":
+        api_key = "cdv_demo_public_unlimited"
+        
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT api_key, credits_balance, total_used, is_active
+        FROM api_keys
+        WHERE api_key = %s
+    """, (api_key,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        return False, f"Invalid API key: '{api_key}'. Please generate an API key on the Credova dashboard.", 0
+        
+    if not row["is_active"]:
+        conn.close()
+        return False, "This API key has been deactivated. Please contact support@credova.io.", 0
+        
+    balance = row["credits_balance"]
+    if balance < credits_needed:
+        conn.close()
+        return False, (
+            f"Insufficient credits. This operation requires {credits_needed} credit(s), "
+            f"but your balance is {balance} credit(s). Please top up your Credova wallet."
+        ), balance
+
+    new_balance = balance - credits_needed
+    new_used = row["total_used"] + credits_needed
+    
+    cursor.execute("""
+        UPDATE api_keys
+        SET credits_balance = %s, total_used = %s
+        WHERE api_key = %s
+    """, (new_balance, new_used, api_key))
+    
+    cursor.execute("""
+        INSERT INTO usage_logs (api_key, job_id, job_type, credits_deducted, balance_after)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (api_key, job_id, job_type, credits_needed, new_balance))
+    
+    conn.commit()
+    conn.close()
+    
+    return True, None, new_balance
+
+def topup_key(
+    api_key: str,
+    credits: int,
+    amount_paid: float,
+    currency: str = "NGN",
+    payment_method: str = "instant_wallet",
+    reference: Optional[str] = None
+) -> Dict[str, Any]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Prevent duplicate crediting for the same payment reference
+    if reference:
+        cursor.execute("SELECT credits_added FROM topup_transactions WHERE reference = %s", (reference,))
+        existing = cursor.fetchone()
+        if existing:
+            cursor.execute("SELECT credits_balance FROM api_keys WHERE api_key = %s", (api_key,))
+            key_row = cursor.fetchone()
+            conn.close()
+            return {
+                "api_key": api_key,
+                "credits_added": 0,
+                "new_balance": key_row["credits_balance"] if key_row else 0,
+                "reference": reference,
+                "amount_paid": amount_paid,
+                "currency": currency,
+                "status": "already_processed"
+            }
+
+    cursor.execute("SELECT credits_balance, total_used FROM api_keys WHERE api_key = %s", (api_key,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        raise ValueError(f"API key '{api_key}' not found.")
+        
+    new_balance = row["credits_balance"] + credits
+    cursor.execute("UPDATE api_keys SET credits_balance = %s WHERE api_key = %s", (new_balance, api_key))
+    
+    tx_ref = reference or f"top_{int(time.time())}_{secrets.token_hex(4)}"
+    cursor.execute("""
+        INSERT INTO topup_transactions (api_key, reference, credits_added, amount_paid, currency, payment_method, status)
+        VALUES (%s, %s, %s, %s, %s, %s, 'success')
+    """, (api_key, tx_ref, credits, amount_paid, currency, payment_method))
+    
+    conn.commit()
+    conn.close()
+    
+    return {
+        "api_key": api_key,
+        "credits_added": credits,
+        "new_balance": new_balance,
+        "reference": tx_ref,
+        "amount_paid": amount_paid,
+        "currency": currency,
+        "status": "success"
+    }
+
+def get_pricing_tiers() -> Dict[str, Any]:
+    return {
+        "currency_rates": {
+            "credit_cost_single_ngn": 350,
+            "credit_cost_consolidated_ngn": 700,
+            "credit_cost_single_usd": 0.25,
+            "credit_cost_consolidated_usd": 0.50
+        },
+        "plans": [
+            {
+                "id": "trial",
+                "name": "Developer Trial",
+                "price": "₦0 / Free",
+                "price_usd": "$0",
+                "badge": "FREE STARTER",
+                "description": "Ideal for exploring the API, testing parsers, and proof-of-concept builds.",
+                "included_credits": 25,
+                "overage_rate": "₦350 / assessment",
+                "features": [
+                    "25 Free Assessments included (~₦8,750 value)",
+                    "Single Statement & Multi-Account Parsing",
+                    "Authenticity & Tampering Forensics",
+                    "Digital Loan-Stacking Detection",
+                    "Interactive Swagger Docs & Web Widget"
+                ]
+            },
+            {
+                "id": "payg",
+                "name": "Pay-As-You-Go",
+                "price": "₦350",
+                "price_usd": "$0.25",
+                "billing": "per statement (no monthly fee)",
+                "badge": "MOST FLEXIBLE",
+                "description": "Prepaid wallet for independent loan brokers, pilot fintechs, and variable volumes.",
+                "included_credits": "Fund on demand",
+                "overage_rate": "₦350 single / ₦700 multi",
+                "features": [
+                    "Zero monthly subscription commitment",
+                    "Pay only for successfully completed assessments",
+                    "Instant wallet top-up via Paystack / Card",
+                    "Webhooks for asynchronous pipeline integration",
+                    "Full Pan-African Bank Support (NG, GH, KE)"
+                ]
+            },
+            {
+                "id": "growth",
+                "name": "Fintech Growth",
+                "price": "₦50,000",
+                "price_usd": "$35",
+                "billing": "per month",
+                "badge": "POPULAR FOR LENDERS",
+                "description": "Designed for active digital lending apps, BNPL originators, and credit unions.",
+                "included_credits": 200,
+                "overage_rate": "₦250 / assessment (28% discount)",
+                "features": [
+                    "200 statement assessments included monthly",
+                    "Discounted overage rate (₦250 per call)",
+                    "Sub-second priority processing queue",
+                    "Unlimited multi-account cross-bank consolidations",
+                    "Email & Slack technical developer support"
+                ]
+            },
+            {
+                "id": "enterprise",
+                "name": "Enterprise Underwriter",
+                "price": "₦200,000",
+                "price_usd": "$140",
+                "billing": "per month",
+                "badge": "HIGH VOLUME",
+                "description": "For Microfinance Banks (MFBs), commercial lenders, and high-frequency underwriting.",
+                "included_credits": 1000,
+                "overage_rate": "₦180 / assessment (48% discount)",
+                "features": [
+                    "1,000 statement assessments included monthly",
+                    "Maximum volume discount (₦180 per call)",
+                    "Custom debt-to-income (DTI) & risk thresholds",
+                    "Dedicated SLA (99.9% uptime guarantee)",
+                    "Dedicated solutions architect & custom parser onboarding"
+                ]
+            }
+        ]
+    }
+</file>
+
 <file path="backend/Dockerfile">
 FROM python:3.11-slim
 
@@ -4079,20 +4055,48 @@ EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 </file>
 
-<file path="backend/requirements.txt">
-fastapi>=0.110.0
-uvicorn[standard]>=0.27.1
-python-multipart>=0.0.9
-sqlalchemy>=2.0.28
-pdfplumber>=0.11.0
-pypdfium2>=4.30.0
-pillow>=10.0.0
-pytesseract>=0.3.10
-opencv-python-headless>=4.9.0.80
-pydantic>=2.6.3
-pydantic-settings>=2.2.1
-requests>=2.31.0
-aiofiles>=23.2.1
+<file path="frontend/src/app/billing/page.tsx">
+import CheckoutButton from "@/components/CheckoutButton";
+
+// Temporary mock data based on your billing.py tiers
+const MOCK_PLANS = [
+  { id: "payg", name: "Pay-As-You-Go", price: "₦350" },
+  { id: "growth", name: "Fintech Growth", price: "₦50,000" },
+  { id: "enterprise", name: "Enterprise Underwriter", price: "₦200,000" }
+];
+
+export default function BillingRoute() {
+  // Hardcoded for testing; later you will fetch this from your auth state
+  const testApiKey = "cdv_demo_public_unlimited"; 
+
+  return (
+    <div className="container-page py-12">
+      <h1 className="text-3xl font-bold mb-8">Upgrade your plan</h1>
+      <PricingPage plans={MOCK_PLANS} userApiKey={testApiKey} />
+    </div>
+  );
+}
+
+export function PricingPage({ plans, userApiKey }: { plans: any[], userApiKey: string }) {
+  return (
+    <div className="grid sm:grid-cols-3 gap-4">
+      {plans.filter(plan => plan.id !== "trial").map((plan) => (
+        <div key={plan.id} className="bg-white text-gray-900 dark:bg-gray-900 p-6">
+          <h3 className="text-lg font-bold">{plan.name}</h3>
+          <p className="text-2xl mt-2">{plan.price}</p>
+          <div className="mt-6">
+            <CheckoutButton 
+              planId={plan.id} 
+              amount={plan.id === "growth" ? 50000 : plan.id === "enterprise" ? 200000 : 350} 
+              apiKey={userApiKey} 
+              buttonText={`Select ${plan.name}`}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 </file>
 
 <file path="frontend/src/app/not-found.tsx">
@@ -4117,6 +4121,180 @@ export default function GlobalNotFound() {
       </div>
     </div>
   );
+}
+</file>
+
+<file path="frontend/src/components/CheckoutButton.tsx">
+"use client";
+import { useState } from "react";
+
+// Silence TypeScript warnings for the global Paystack object and process
+declare global {
+  interface Window {
+    PaystackPop: any;
+  }
+}
+declare const process: any;
+
+interface CheckoutButtonProps {
+  planId: string;
+  amount: number;
+  apiKey: string;
+  buttonText: string;
+  email?: string;
+  publicKey?: string;
+}
+
+export default function CheckoutButton({
+  planId,
+  amount,
+  apiKey,
+  buttonText,
+  email = "developer@credova.io",
+  publicKey,
+}: CheckoutButtonProps) {
+  const [loading, setLoading] = useState(false);
+
+  // Dynamically inject Paystack's official inline script only when needed
+  const loadPaystackScript = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (typeof window !== "undefined" && window.PaystackPop) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://js.paystack.co/v1/inline.js";
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  async function handleCheckout() {
+    setLoading(true);
+
+    const isLoaded = await loadPaystackScript();
+    if (!isLoaded || !window.PaystackPop) {
+      alert("Unable to load Paystack checkout. Please check your internet connection.");
+      setLoading(false);
+      return;
+    }
+
+    // Read from props, environment variable, or fallback placeholder
+    const paystackKey =
+      publicKey ||
+      (typeof process !== "undefined" &&
+        (process.env?.NEXT_PUBLIC_PAYSTACK_KEY || process.env?.PAYSTACK_PUBLIC_KEY)) ||
+      "pk_test_5bcccf19a956e37e0a8d2eb30018cb2c632748a5";
+
+    const handler = window.PaystackPop.setup({
+      key: paystackKey,
+      email: email,
+      amount: Math.round(amount * 100), // Convert NGN to kobo
+      currency: "NGN",
+      ref: `cdv_${Date.now()}_${Math.floor(Math.random() * 1000000)}`,
+      metadata: {
+        api_key: apiKey,
+        plan_id: planId,
+        custom_fields: [
+          {
+            display_name: "API Key",
+            variable_name: "api_key",
+            value: apiKey,
+          },
+          {
+            display_name: "Plan ID",
+            variable_name: "plan_id",
+            value: planId,
+          },
+        ],
+      },
+      callback: function (response: { reference: string }) {
+        // Call FastAPI to verify payment and credit the wallet
+        fetch("http://localhost:8000/api/paystack/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reference: response.reference,
+            api_key: apiKey,
+            plan_id: planId,
+          }),
+        })
+          .then(async (res) => {
+            setLoading(false);
+            if (res.ok) {
+              const data = await res.json();
+              alert(`Payment verified! Added ${data.credits_added} credits. New balance: ${data.new_balance}`);
+              window.location.href = `/billing?payment=success&reference=${response.reference}`;
+            } else {
+              const err = await res.json();
+              alert(`Payment succeeded, but verification failed: ${err.detail}`);
+            }
+          })
+          .catch((err) => {
+            console.error(err);
+            setLoading(false);
+          });
+      },
+      onClose: function () {
+        setLoading(false);
+      },
+    });
+
+    handler.openIframe();
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCheckout}
+      disabled={loading}
+      className="btn btn-primary w-full"
+    >
+      {loading ? "Opening Paystack..." : buttonText}
+    </button>
+  );
+}
+</file>
+
+<file path="frontend/package.json">
+{
+  "name": "frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "swift-rust dev",
+    "build": "swift-rust build",
+    "start": "swift-rust start",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.3.0",
+    "@vrs-pay/react": "^0.1.2",
+    "@vrs-pay/sdk": "^0.1.0",
+    "postcss": "^8.5.15",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-paystack": "^6.0.0",
+    "swift-rust": "^1.10.11",
+    "tailwindcss": "^4.3.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
+    "@types/bun": "^1.3.0",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^6.0.0"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  }
 }
 </file>
 
@@ -4372,6 +4550,48 @@ bun.lockb
   window.BankStatementWidget = BankStatementWidget;
   window.CredovaWidget = BankStatementWidget;
 })();
+</file>
+
+<file path="backend/requirements.txt">
+aiofiles==25.1.0
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.2
+click==8.5.0
+cryptography==50.0.2
+fastapi==0.143.0
+h11==0.16.0
+httptools==0.9.0
+idna==3.20
+numpy==2.5.4
+opencv-python-headless==5.0.0.93
+opentelemetry-api==1.45.1
+packaging==26.3
+pdfminer.six==20260107
+pdfplumber==0.11.10
+pillow==12.3.0
+psycopg2-binary==2.9.13
+pycparser==3.11
+pydantic==2.14.1
+pydantic-settings==2.15.0
+pydantic_core==2.50.1
+pypdfium2==5.14.0
+pytesseract==0.3.13
+python-dotenv==1.2.4
+python-multipart==0.0.32
+PyYAML==6.0.3
+requests==2.34.2
+SQLAlchemy==2.1.4
+starlette==1.7.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+urllib3==2.8.0
+uvicorn==0.54.0
+watchfiles==1.3.0
+websockets==17.2
 </file>
 
 <file path="frontend/src/app/layout.tsx">
@@ -6575,22 +6795,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 </html>
 </file>
 
-<file path="render.yaml">
-services:
-  # Credova All-in-One Engine (FastAPI + Embedded Underwriting Dashboard + Tesseract OCR)
-  - type: web
-    name: credova-api
-    env: docker
-    dockerContext: ./backend
-    dockerfilePath: ./backend/Dockerfile
-    plan: free
-    region: frankfurt
-    envVars:
-      - key: PORT
-        value: 8000
-    healthCheckPath: /docs
-</file>
-
 <file path="backend/static/_swift-rust/island/1u156d2.js">
 var m9=Object.create;var{getPrototypeOf:l9,defineProperty:zX,getOwnPropertyNames:d9}=Object;var p9=Object.prototype.hasOwnProperty;var NV=(_,Y,z)=>{z=_!=null?m9(l9(_)):{};let G=Y||!_||!_.__esModule?zX(z,"default",{value:_,enumerable:!0}):z;for(let X of d9(_))if(!p9.call(G,X))zX(G,X,{get:()=>_[X],enumerable:!0});return G};var Az=(_,Y)=>()=>(Y||_((Y={exports:{}}).exports,Y),Y.exports);var c9=(_,Y)=>{for(var z in Y)zX(_,z,{get:Y[z],enumerable:!0,configurable:!0,set:(G)=>Y[z]=()=>G})};var EV=(_,Y)=>()=>(_&&(Y=_(_=0)),Y);function XX(_,Y){var z=_.length;_.push(Y);_:for(;0<z;){var G=z-1>>>1,X=_[G];if(0<Qz(X,Y))_[G]=Y,_[z]=X,z=G;else break _}}function A_(_){return _.length===0?null:_[0]}function $z(_){if(_.length===0)return null;var Y=_[0],z=_.pop();if(z!==Y){_[0]=z;_:for(var G=0,X=_.length,Z=X>>>1;G<Z;){var U=2*(G+1)-1,V=_[U],H=U+1,Q=_[H];if(0>Qz(V,z))H<X&&0>Qz(Q,V)?(_[G]=Q,_[H]=z,G=H):(_[G]=V,_[U]=z,G=U);else if(H<X&&0>Qz(Q,z))_[G]=Q,_[H]=z,G=H;else break _}}return Y}function Qz(_,Y){var z=_.sortIndex-Y.sortIndex;return z!==0?z:_.id-Y.id}function Bz(_){for(var Y=A_(c_);Y!==null;){if(Y.callback===null)$z(c_);else if(Y.startTime<=_)$z(c_),Y.sortIndex=Y.expirationTime,XX(F_,Y);else break;Y=A_(c_)}}function WX(_){if(Y2=!1,Bz(_),!_2)if(A_(F_)!==null)_2=!0,tY||(tY=!0,nY());else{var Y=A_(c_);Y!==null&&AX(WX,Y.startTime-_)}}function PV(){return JX?!0:Q_()-IV<i9?!1:!0}function GX(){if(JX=!1,tY){var _=Q_();IV=_;var Y=!0;try{_:{_2=!1,Y2&&(Y2=!1,FV(z2),z2=-1),VX=!0;var z=qz;try{Y:{Bz(_);for(i0=A_(F_);i0!==null&&!(i0.expirationTime>_&&PV());){var G=i0.callback;if(typeof G==="function"){i0.callback=null,qz=i0.priorityLevel;var X=G(i0.expirationTime<=_);if(_=Q_(),typeof X==="function"){i0.callback=X,Bz(_),Y=!0;break Y}i0===A_(F_)&&$z(F_),Bz(_)}else $z(F_);i0=A_(F_)}if(i0!==null)Y=!0;else{var Z=A_(c_);Z!==null&&AX(WX,Z.startTime-_),Y=!1}}break _}finally{i0=null,qz=z,VX=!1}Y=void 0}}finally{Y?nY():tY=!1}}}function AX(_,Y){z2=SV(function(){_(Q_())},Y)}var Q_=void 0,ZX,wz,UX,F_,c_,a9=1,i0=null,qz=3,VX=!1,_2=!1,Y2=!1,JX=!1,SV,FV,fV,tY=!1,z2=-1,i9=5,IV=-1,nY,Kz,HX,QX=5,wX=1,qX=4,eY=3,BX=2,KX=function(_){_.callback=null},$X=function(){return qz},MX=function(){JX=!0},_1=function(_,Y,z){var G=Q_();switch(typeof z==="object"&&z!==null?(z=z.delay,z=typeof z==="number"&&0<z?G+z:G):z=G,_){case 1:var X=-1;break;case 2:X=250;break;case 5:X=1073741823;break;case 4:X=1e4;break;default:X=5000}return X=z+X,_={id:a9++,callback:Y,priorityLevel:_,startTime:z,expirationTime:X,sortIndex:-1},z>G?(_.sortIndex=z,XX(c_,_),A_(F_)===null&&_===A_(c_)&&(Y2?(FV(z2),z2=-1):Y2=!0,AX(WX,z-G))):(_.sortIndex=X,XX(F_,_),_2||VX||(_2=!0,tY||(tY=!0,nY()))),_},CX;var kV=EV(()=>{if(typeof performance==="object"&&typeof performance.now==="function")ZX=performance,Q_=function(){return ZX.now()};else wz=Date,UX=wz.now(),Q_=function(){return wz.now()-UX};F_=[],c_=[],SV=typeof setTimeout==="function"?setTimeout:null,FV=typeof clearTimeout==="function"?clearTimeout:null,fV=typeof setImmediate<"u"?setImmediate:null;if(typeof fV==="function")nY=function(){fV(GX)};else if(typeof MessageChannel<"u")Kz=new MessageChannel,HX=Kz.port2,Kz.port1.onmessage=GX,nY=function(){HX.postMessage(null)};else nY=function(){SV(GX,0)};CX=PV});function G2(_,Y,z){this.props=_,this.context=Y,this.refs=yV,this.updater=z||vV}function bV(){}function jV(_,Y,z){this.props=_,this.context=Y,this.refs=yV,this.updater=z||vV}function t9(_,Y,z){var G=z.ref;return{$$typeof:r9,type:_,key:Y,ref:G!==void 0?G:null,props:z}}var r9,vV,s9,yV,DX,LX,n9,X2,RX=function(_,Y,z){var G,X={},Z=null;if(Y!=null)for(G in Y.key!==void 0&&(Z=""+Y.key),Y)n9.call(Y,G)&&G!=="key"&&G!=="__self"&&G!=="__source"&&(X[G]=Y[G]);var U=arguments.length-2;if(U===1)X.children=z;else if(1<U){for(var V=Array(U),H=0;H<U;H++)V[H]=arguments[H+2];X.children=V}if(_&&_.defaultProps)for(G in U=_.defaultProps,U)X[G]===void 0&&(X[G]=U[G]);return t9(_,Z,X)},OX=function(_,Y){return LX.H.useEffect(_,Y)},e=function(_){return LX.H.useState(_)},TX="19.3.0";var Z2=EV(()=>{r9=Symbol.for("react.transitional.element"),vV={isMounted:function(){return!1},enqueueForceUpdate:function(){},enqueueReplaceState:function(){},enqueueSetState:function(){}},s9=Object.assign,yV={};G2.prototype.isReactComponent={};G2.prototype.setState=function(_,Y){if(typeof _!=="object"&&typeof _!=="function"&&_!=null)throw Error("takes an object of state variables to update or a function which returns an object of state variables.");this.updater.enqueueSetState(this,_,Y,"setState")};G2.prototype.forceUpdate=function(_){this.updater.enqueueForceUpdate(this,_,"forceUpdate")};bV.prototype=G2.prototype;DX=jV.prototype=new bV;DX.constructor=jV;s9(DX,G2.prototype);DX.isPureReactComponent=!0;LX={H:null,A:null,T:null,S:null},n9=Object.prototype.hasOwnProperty;X2=LX});var gV=Az((zW)=>{Z2();function uV(_){var Y="https://react.dev/errors/"+_;if(1<arguments.length){Y+="?args[]="+encodeURIComponent(arguments[1]);for(var z=2;z<arguments.length;z++)Y+="&args[]="+encodeURIComponent(arguments[z])}return"Minified React error #"+_+"; visit "+Y+" for the full message or use the non-minified dev environment for full errors and additional helpful warnings."}function a_(){}var O0={d:{f:a_,r:function(){throw Error(uV(522))},D:a_,C:a_,L:a_,m:a_,X:a_,S:a_,M:a_},p:0,findDOMNode:null},e9=Symbol.for("react.portal"),_W=Symbol.for("react.recoverable"),xV=Symbol.for("react.optimistic_key");function YW(_,Y,z){var G=3<arguments.length&&arguments[3]!==void 0?arguments[3]:null;return{$$typeof:e9,key:G==null?null:G===xV?xV:""+G,children:_,containerInfo:Y,implementation:z}}var U2=X2;function Mz(_,Y){if(_==="font")return"";if(typeof Y==="string")return Y==="use-credentials"?Y:""}zW.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE=O0;zW.browser=function(_){return{$$typeof:_W,_reason:_}};zW.createPortal=function(_,Y){var z=2<arguments.length&&arguments[2]!==void 0?arguments[2]:null;if(!Y||Y.nodeType!==1&&Y.nodeType!==9&&Y.nodeType!==11)throw Error(uV(299));return YW(_,Y,null,z)};zW.flushSync=function(_){var Y=U2.T,z=O0.p;try{if(U2.T=null,O0.p=2,_)return _()}finally{U2.T=Y,O0.p=z,O0.d.f()}};zW.preconnect=function(_,Y){typeof _==="string"&&(Y?(Y=Y.crossOrigin,Y=typeof Y==="string"?Y==="use-credentials"?Y:"":void 0):Y=null,O0.d.C(_,Y))};zW.prefetchDNS=function(_){typeof _==="string"&&O0.d.D(_)};zW.preinit=function(_,Y){if(typeof _==="string"&&Y&&typeof Y.as==="string"){var z=Y.as,G=Mz(z,Y.crossOrigin),X=typeof Y.integrity==="string"?Y.integrity:void 0,Z=typeof Y.fetchPriority==="string"?Y.fetchPriority:void 0;z==="style"?O0.d.S(_,typeof Y.precedence==="string"?Y.precedence:void 0,{crossOrigin:G,integrity:X,fetchPriority:Z}):z==="script"&&O0.d.X(_,{crossOrigin:G,integrity:X,fetchPriority:Z,nonce:typeof Y.nonce==="string"?Y.nonce:void 0})}};zW.preinitModule=function(_,Y){if(typeof _==="string")if(typeof Y==="object"&&Y!==null){if(Y.as==null||Y.as==="script"){var z=Mz(Y.as,Y.crossOrigin);O0.d.M(_,{crossOrigin:z,integrity:typeof Y.integrity==="string"?Y.integrity:void 0,nonce:typeof Y.nonce==="string"?Y.nonce:void 0,fetchPriority:typeof Y.fetchPriority==="string"?Y.fetchPriority:void 0})}}else Y==null&&O0.d.M(_)};zW.preload=function(_,Y){if(typeof _==="string"&&typeof Y==="object"&&Y!==null&&typeof Y.as==="string"){var z=Y.as,G=Mz(z,Y.crossOrigin);O0.d.L(_,z,{crossOrigin:G,integrity:typeof Y.integrity==="string"?Y.integrity:void 0,nonce:typeof Y.nonce==="string"?Y.nonce:void 0,type:typeof Y.type==="string"?Y.type:void 0,fetchPriority:typeof Y.fetchPriority==="string"?Y.fetchPriority:void 0,referrerPolicy:typeof Y.referrerPolicy==="string"?Y.referrerPolicy:void 0,imageSrcSet:typeof Y.imageSrcSet==="string"?Y.imageSrcSet:void 0,imageSizes:typeof Y.imageSizes==="string"?Y.imageSizes:void 0,media:typeof Y.media==="string"?Y.media:void 0})}};zW.preloadModule=function(_,Y){if(typeof _==="string")if(Y){var z=Mz(Y.as,Y.crossOrigin);O0.d.m(_,{as:typeof Y.as==="string"&&Y.as!=="script"?Y.as:void 0,crossOrigin:z,integrity:typeof Y.integrity==="string"?Y.integrity:void 0,nonce:typeof Y.nonce==="string"?Y.nonce:void 0,fetchPriority:typeof Y.fetchPriority==="string"?Y.fetchPriority:void 0})}else O0.d.m(_)};zW.requestFormReset=function(_){O0.d.r(_)};zW.unstable_batchedUpdates=function(_,Y){return _(Y)};zW.useFormState=function(_,Y,z){return U2.H.useFormState(_,Y,z)};zW.useFormStatus=function(){return U2.H.useHostTransitionStatus()};zW.version="19.3.0"});var dV=Az((I7,lV)=>{function mV(){if(typeof __REACT_DEVTOOLS_GLOBAL_HOOK__>"u"||typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE!=="function")return;try{__REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE(mV)}catch(_){console.error(_)}}mV(),lV.exports=gV()});var f9=Az((C7)=>{kV();Z2();var E4=NV(dV());function D(_){var Y="https://react.dev/errors/"+_;if(1<arguments.length){Y+="?args[]="+encodeURIComponent(arguments[1]);for(var z=2;z<arguments.length;z++)Y+="&args[]="+encodeURIComponent(arguments[z])}return"Minified React error #"+_+"; visit "+Y+" for the full message or use the non-minified dev environment for full errors and additional helpful warnings."}function f4(_){return!(!_||_.nodeType!==1&&_.nodeType!==9&&_.nodeType!==11)}function s2(_){for(var Y=_,z=Y;z&&!z.alternate;)Y=z,(Y.flags&4098)!==0&&(_=Y.return),z=Y.return;for(;Y.return;)Y=Y.return;return Y.tag===3?_:null}function S4(_){if(_.tag===13){var Y=_.memoizedState;if(Y===null&&(_=_.alternate,_!==null&&(Y=_.memoizedState)),Y!==null)return Y.dehydrated}return null}function F4(_){if(_.tag===31){var Y=_.memoizedState;if(Y===null&&(_=_.alternate,_!==null&&(Y=_.memoizedState)),Y!==null)return Y.dehydrated}return null}function pV(_){if(s2(_)!==_)throw Error(D(188))}function MW(_){var Y=_.alternate;if(!Y){if(Y=s2(_),Y===null)throw Error(D(188));return Y!==_?null:_}for(var z=_,G=Y;;){var X=z.return;if(X===null)break;var Z=X.alternate;if(Z===null){if(G=X.return,G!==null){z=G;continue}break}if(X.child===Z.child){for(Z=X.child;Z;){if(Z===z)return pV(X),_;if(Z===G)return pV(X),Y;Z=Z.sibling}throw Error(D(188))}if(z.return!==G.return)z=X,G=Z;else{for(var U=!1,V=X.child;V;){if(V===z){U=!0,z=X,G=Z;break}if(V===G){U=!0,G=X,z=Z;break}V=V.sibling}if(!U){for(V=Z.child;V;){if(V===z){U=!0,z=Z,G=X;break}if(V===G){U=!0,G=Z,z=X;break}V=V.sibling}if(!U)throw Error(D(189))}}if(z.alternate!==G)throw Error(D(190))}if(z.tag!==3)throw Error(D(188));return z.stateNode.current===z?_:Y}function I4(_){var Y=_.tag;if(Y===5||Y===26||Y===27||Y===6)return _;for(_=_.child;_!==null;){if(Y=I4(_),Y!==null)return Y;_=_.sibling}return null}function v0(_,Y,z,G,X,Z){for(;_!==null;){if((_.tag===5||_.tag===27||_.tag===6)&&z(_,G,X,Z)||(_.tag!==22||_.memoizedState===null)&&(Y||_.tag!==5&&_.tag!==27)&&v0(_.child,Y,z,G,X,Z))return!0;_=_.sibling}return!1}function cY(_){for(_=_.return;_!==null;){if(_.tag===3||_.tag===5||_.tag===27)return _;_=_.return}return null}function cV(_){var Y=!1;for(_=_.return;_!==null;){if(_.tag===4&&(Y=!0),_.tag===3||_.tag===5||_.tag===27)break;_=_.return}return Y}function P4(_){var Y=[null,null],z=cY(_);if(z===null)return Y;return k4(Y,_,z.child,{foundSelf:!1}),Y}function k4(_,Y,z,G){for(;z!==null;){if(z===Y)G.foundSelf=!0;else if(z.tag===5||z.tag===27||z.tag===6){if(G.foundSelf)return _[1]=z,!0;_[0]=z}else if((z.tag!==22||z.memoizedState===null)&&k4(_,Y,z.child,G))return!0;z=z.sibling}return!1}function W0(_){switch(_.tag){case 5:case 27:case 6:return _.stateNode;case 3:return _.stateNode.containerInfo;default:throw Error(D(559))}}var V1=null,YZ=null;function CW(_,Y,z){return _===z?!0:_===Y?(V1=_,!0):!1}function DW(_,Y,z){return _===z?(YZ=_,!1):_===Y?(YZ!==null&&(V1=_),!0):!1}function aV(_){if(_===null)return null;do _=_===null?null:_.return;while(_&&_.tag!==5&&_.tag!==27&&_.tag!==3);return _?_:null}function zZ(_,Y,z){for(var G=0,X=_;X;X=z(X))G++;X=0;for(var Z=Y;Z;Z=z(Z))X++;for(;0<G-X;)_=z(_),G--;for(;0<X-G;)Y=z(Y),X--;for(;G--;){if(_===Y||Y!==null&&_===Y.alternate)return _;_=z(_),Y=z(Y)}return null}var r=Object.assign,LW=Symbol.for("react.element"),Cz=Symbol.for("react.transitional.element"),Q2=Symbol.for("react.portal"),H1=Symbol.for("react.fragment"),v4=Symbol.for("react.strict_mode"),GZ=Symbol.for("react.profiler"),y4=Symbol.for("react.consumer"),M_=Symbol.for("react.context"),qU=Symbol.for("react.forward_ref"),XZ=Symbol.for("react.suspense"),ZZ=Symbol.for("react.suspense_list"),BU=Symbol.for("react.memo"),s_=Symbol.for("react.lazy"),UZ=Symbol.for("react.activity"),RW=Symbol.for("react.legacy_hidden"),OW=Symbol.for("react.memo_cache_sentinel"),VZ=Symbol.for("react.view_transition"),TW=Symbol.for("react.recoverable"),iV=Symbol.iterator;function V2(_){if(_===null||typeof _!=="object")return null;return _=iV&&_[iV]||_["@@iterator"],typeof _==="function"?_:null}var NW=Symbol.for("react.client.reference");function HZ(_){if(_==null)return null;if(typeof _==="function")return _.$$typeof===NW?null:_.displayName||_.name||null;if(typeof _==="string")return _;switch(_){case H1:return"Fragment";case GZ:return"Profiler";case v4:return"StrictMode";case XZ:return"Suspense";case ZZ:return"SuspenseList";case UZ:return"Activity";case VZ:return"ViewTransition"}if(typeof _==="object")switch(_.$$typeof){case Q2:return"Portal";case M_:return _.displayName||"Context";case y4:return(_._context.displayName||"Context")+".Consumer";case qU:var Y=_.render;return _=_.displayName,_||(_=Y.displayName||Y.name||"",_=_!==""?"ForwardRef("+_+")":"ForwardRef"),_;case BU:return Y=_.displayName||null,Y!==null?Y:HZ(_.type)||"Memo";case s_:Y=_._payload,_=_._init;try{return HZ(_(Y))}catch(z){}}return null}var w2=Array.isArray,S=X2,m=E4.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE,kY={pending:!1,data:null,method:null,action:null},JZ=[],J1=-1;function N_(_){return{current:_}}function M0(_){0>J1||(_.current=JZ[J1],JZ[J1]=null,J1--)}function t(_,Y){J1++,JZ[J1]=_.current,_.current=Y}var R_=N_(null),y2=N_(null),ZY=N_(null),zG=N_(null);function GG(_,Y){switch(t(ZY,Y),t(y2,_),t(R_,null),Y.nodeType){case 9:case 11:_=(_=Y.documentElement)?(_=_.namespaceURI)?Z4(_):0:0;break;default:if(_=Y.tagName,Y=Y.namespaceURI)Y=Z4(Y),_=z9(Y,_);else switch(_){case"svg":_=1;break;case"math":_=2;break;default:_=0}}M0(R_),t(R_,_)}function F1(){M0(R_),M0(y2),M0(ZY)}function WZ(_){var Y=_.memoizedState;Y!==null&&(u1._currentValue=Y.memoizedState,t(zG,_)),Y=R_.current;var z=z9(Y,_.type);Y!==z&&(t(y2,_),t(R_,z))}function XG(_){y2.current===_&&(M0(R_),M0(y2)),zG.current===_&&(M0(zG),u1._currentValue=kY)}var NX,oV;function o_(_){if(NX===void 0)try{throw Error()}catch(z){var Y=z.stack.trim().match(/\n( *(at )?)/);NX=Y&&Y[1]||"",oV=-1<z.stack.indexOf(`
     at`)?" (<anonymous>)":-1<z.stack.indexOf("@")?"@unknown:0:0":""}return`
@@ -8697,16 +8901,44 @@ console.log("Credits remaining:", res.data.credits_remaining);`})]})]}),w("div",
 </html>
 </file>
 
+<file path="render.yaml">
+services:
+  # Credova All-in-One Engine (FastAPI + Embedded Underwriting Dashboard + Tesseract OCR)
+  - type: web
+    name: credova-api
+    env: docker
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    region: frankfurt
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: DATABASE_URL
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+</file>
+
 <file path="backend/app/main.py">
 import os
 import re
+import requests
 import shutil
 import uuid
+import json
+import hmac
+import hashlib
+from dotenv import load_dotenv
 from typing import Dict, Any, List, Optional
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Header, Query
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+# Explicitly load the .env file from the backend root directory
+env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+load_dotenv(dotenv_path=env_path)
 
 import pdfplumber
 import pytesseract
@@ -8991,6 +9223,99 @@ def topup_wallet(req: TopupRequest):
         return topup_key(req.api_key, req.credits, req.amount, req.currency or "NGN")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+class PaystackVerifyRequest(BaseModel):
+    reference: str
+    api_key: Optional[str] = None
+    plan_id: Optional[str] = None
+
+def calculate_credits_for_plan(plan_id: Optional[str], amount_ngn: float) -> int:
+    if plan_id == "growth":
+        return 200
+    elif plan_id == "enterprise":
+        return 1000
+    # Default to PAYG rate (₦350 per credit)
+    return max(1, int(amount_ngn // 350))
+
+@app.post("/api/paystack/verify")
+def verify_paystack_payment(req: PaystackVerifyRequest):
+    secret_key = os.environ.get("PAYSTACK_SECRET_KEY")
+    if not secret_key:
+        raise HTTPException(status_code=500, detail="PAYSTACK_SECRET_KEY not configured on backend")
+
+    headers = {"Authorization": f"Bearer {secret_key}"}
+    res = requests.get(f"https://api.paystack.co/transaction/verify/{req.reference}", headers=headers, timeout=10)
+    
+    if not res.ok:
+        raise HTTPException(status_code=400, detail="Could not verify transaction with Paystack")
+
+    payload = res.json()
+    data = payload.get("data", {})
+
+    if data.get("status") != "success":
+        raise HTTPException(status_code=400, detail=f"Transaction status is {data.get('status')}")
+
+    metadata = data.get("metadata", {}) if isinstance(data.get("metadata"), dict) else {}
+    api_key = req.api_key or metadata.get("api_key")
+    plan_id = req.plan_id or metadata.get("plan_id")
+    amount_paid = data.get("amount", 0) / 100.0
+    currency = data.get("currency", "NGN")
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="No API key associated with this payment")
+
+    credits_to_add = calculate_credits_for_plan(plan_id, amount_paid)
+
+    try:
+        return topup_key(
+            api_key=api_key,
+            credits=credits_to_add,
+            amount_paid=amount_paid,
+            currency=currency,
+            payment_method="paystack",
+            reference=req.reference
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.post("/webhooks/paystack")
+async def paystack_webhook(request: Request, x_paystack_signature: str = Header(None, alias="x-paystack-signature")):
+    secret_key = os.environ.get("PAYSTACK_SECRET_KEY")
+    if not secret_key:
+        raise HTTPException(status_code=500, detail="PAYSTACK_SECRET_KEY not configured")
+
+    raw_body = await request.body()
+    expected_sig = hmac.new(secret_key.encode("utf-8"), raw_body, hashlib.sha512).hexdigest()
+
+    if not x_paystack_signature or not hmac.compare_digest(expected_sig, x_paystack_signature):
+        raise HTTPException(status_code=400, detail="Invalid Paystack signature")
+
+    event = json.loads(raw_body)
+    if event.get("event") == "charge.success":
+        data = event.get("data", {})
+        reference = data.get("reference")
+        amount_paid = data.get("amount", 0) / 100.0
+        currency = data.get("currency", "NGN")
+        metadata = data.get("metadata", {}) if isinstance(data.get("metadata"), dict) else {}
+
+        api_key = metadata.get("api_key")
+        plan_id = metadata.get("plan_id")
+
+        if api_key and reference:
+            credits_to_add = calculate_credits_for_plan(plan_id, amount_paid)
+            try:
+                topup_key(
+                    api_key=api_key,
+                    credits=credits_to_add,
+                    amount_paid=amount_paid,
+                    currency=currency,
+                    payment_method="paystack_webhook",
+                    reference=reference
+                )
+            except ValueError:
+                pass
+
+    return {"status": "ok"}
 
 @app.post("/statements/upload")
 async def upload_statement(
